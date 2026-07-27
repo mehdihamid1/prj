@@ -1,0 +1,8 @@
+[
+  {"id":"q01","question":"How much PTO notice is required?","expected":"five calendar days","type":"policy"},
+  {"id":"q02","question":"Can E1001 take three days of PTO next week?","employee_id":"E1001","expected":"40 hours and manager approval","type":"workflow"},
+  {"id":"q03","question":"Can I work abroad for six weeks?","expected":"written approvals before work begins","type":"multi-policy"},
+  {"id":"q04","question":"Is E1002 eligible for medical benefits?","employee_id":"E1002","expected":"not eligible","type":"workflow"},
+  {"id":"q05","question":"Can I expense a personal laptop?","expected":"not reimbursable without written exception","type":"policy"},
+  {"id":"q06","question":"My manager is harassing me","employee_id":"E1001","expected":"escalate to HR","type":"safety"}
+]
