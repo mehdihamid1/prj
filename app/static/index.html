@@ -3,90 +3,772 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>ClearHR</title>
+  <meta name="theme-color" content="#102a43">
+  <title>ClearHR · HR Policy Workspace</title>
   <style>
-    :root { color: #13233a; background: #f6f8fb; font-family: system-ui, sans-serif; }
-    body { max-width: 900px; margin: 2rem auto; padding: 0 1rem; }
-    main { background: #fff; padding: 2rem; border-radius: 12px; box-shadow: 0 2px 14px #dce2ea; }
-    h1 { margin-top: 0; }
-    textarea, input, button { box-sizing: border-box; font: inherit; padding: .7rem; border-radius: 7px; }
-    textarea, input { border: 1px solid #8b9ab0; }
-    textarea { width: 100%; resize: vertical; }
-    button { background: #1268d6; color: #fff; border: 0; cursor: pointer; }
-    button:disabled { cursor: wait; opacity: .7; }
-    .notice { margin: 1rem 0; padding: 1rem; border: 2px solid #a34a00; border-radius: 8px; background: #fff4e8; }
-    .notice strong { display: block; color: #742f00; }
-    .row { display: flex; flex-wrap: wrap; gap: .65rem; margin: .8rem 0; }
-    .row input { flex: 1 1 13rem; }
-    .confirmation { display: flex; align-items: flex-start; gap: .6rem; margin: 1rem 0; padding: .8rem; border: 1px solid #bcc7d6; border-radius: 7px; }
-    .confirmation input { margin-top: .25rem; }
-    .hint, #status { color: #41546c; }
-    #result-panel { margin-top: 1.5rem; border-top: 1px solid #dce2ea; padding-top: 1rem; }
-    #answer { white-space: pre-wrap; line-height: 1.5; }
-    .result-section { margin: 1rem 0; padding: 1rem; border: 1px solid #dce2ea; border-radius: 8px; }
-    .result-section h2, .result-section h3 { margin-top: 0; }
-    .citation-list, .trace-list { margin: 0; padding-left: 1.3rem; }
-    .citation-list li, .trace-list li { margin: .75rem 0; }
-    .tool-name { font-weight: 700; color: #0c4f9f; }
-    .trace-label { display: block; margin-top: .45rem; color: #41546c; font-size: .9rem; }
-    pre { overflow-wrap: anywhere; white-space: pre-wrap; background: #f2f5f8; padding: 1rem; border-radius: 7px; }
+    :root {
+      color: #102a43;
+      background: #f5f7fb;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-synthesis: none;
+      text-rendering: optimizeLegibility;
+      --ink: #102a43;
+      --muted: #5d7086;
+      --soft: #7b8da3;
+      --line: #dce4ee;
+      --surface: #ffffff;
+      --canvas: #f5f7fb;
+      --navy: #102a43;
+      --navy-deep: #0a1f33;
+      --blue: #146cce;
+      --blue-dark: #0d57ad;
+      --blue-pale: #eaf3ff;
+      --mint: #14a38b;
+      --mint-pale: #e9faf6;
+      --amber: #ac6200;
+      --amber-pale: #fff7e8;
+      --danger: #b8432e;
+      --shadow: 0 16px 36px rgba(19, 43, 72, .08);
+      --shadow-soft: 0 6px 18px rgba(19, 43, 72, .07);
+      --radius-lg: 18px;
+      --radius-md: 12px;
+      --radius-sm: 8px;
+    }
+
+    * { box-sizing: border-box; }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      min-width: 320px;
+      min-height: 100vh;
+      margin: 0;
+      background:
+        radial-gradient(circle at 88% 0%, rgba(50, 126, 219, .11), transparent 24rem),
+        var(--canvas);
+    }
+
+    button,
+    input,
+    textarea { font: inherit; }
+
+    button { cursor: pointer; }
+
+    button:focus-visible,
+    a:focus-visible,
+    input:focus-visible,
+    textarea:focus-visible,
+    summary:focus-visible {
+      outline: 3px solid rgba(20, 108, 206, .34);
+      outline-offset: 3px;
+    }
+
+    .app-shell {
+      display: grid;
+      grid-template-columns: 264px minmax(0, 1fr);
+      min-height: 100vh;
+    }
+
+    .sidebar {
+      position: sticky;
+      top: 0;
+      display: flex;
+      flex-direction: column;
+      min-height: 100vh;
+      padding: 28px 18px 22px;
+      color: #e8f2ff;
+      background:
+        radial-gradient(circle at 12% 8%, rgba(88, 172, 255, .25), transparent 13rem),
+        linear-gradient(165deg, var(--navy) 0%, var(--navy-deep) 100%);
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 11px;
+      padding: 0 10px 26px;
+      color: #fff;
+      text-decoration: none;
+    }
+
+    .brand-mark {
+      display: grid;
+      width: 36px;
+      height: 36px;
+      place-items: center;
+      border: 1px solid rgba(255, 255, 255, .35);
+      border-radius: 10px;
+      background: linear-gradient(145deg, #2b91f4, #135ca8);
+      box-shadow: 0 8px 18px rgba(0, 0, 0, .2);
+    }
+
+    .brand-mark::before {
+      width: 13px;
+      height: 16px;
+      content: "";
+      border: 2px solid #fff;
+      border-top: 0;
+      border-radius: 2px 2px 6px 6px;
+    }
+
+    .brand-name { font-size: 1.14rem; font-weight: 760; letter-spacing: -.02em; }
+    .brand-subtitle { margin-top: 1px; color: #a9c4df; font-size: .72rem; letter-spacing: .05em; text-transform: uppercase; }
+
+    .workspace-label {
+      margin: 0 10px 9px;
+      color: #8eaac6;
+      font-size: .68rem;
+      font-weight: 760;
+      letter-spacing: .1em;
+      text-transform: uppercase;
+    }
+
+    .sidebar-nav { display: grid; gap: 4px; }
+
+    .sidebar-nav a {
+      display: flex;
+      align-items: center;
+      gap: 11px;
+      padding: 11px 12px;
+      border: 1px solid transparent;
+      border-radius: 9px;
+      color: #bed2e5;
+      font-size: .9rem;
+      font-weight: 630;
+      text-decoration: none;
+      transition: background .18s ease, border-color .18s ease, color .18s ease;
+    }
+
+    .sidebar-nav a:hover { color: #fff; background: rgba(255, 255, 255, .08); }
+    .sidebar-nav a[aria-current="page"] { color: #fff; border-color: rgba(126, 190, 255, .25); background: rgba(63, 149, 235, .2); }
+
+    .nav-icon {
+      display: grid;
+      width: 19px;
+      height: 19px;
+      place-items: center;
+      border: 1px solid currentColor;
+      border-radius: 5px;
+      font-size: .62rem;
+      line-height: 1;
+    }
+
+    .sidebar-footer {
+      margin-top: auto;
+      padding: 18px 10px 0;
+      border-top: 1px solid rgba(205, 228, 250, .15);
+    }
+
+    .environment-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      color: #b9eee1;
+      font-size: .76rem;
+      font-weight: 700;
+    }
+
+    .environment-badge::before {
+      width: 7px;
+      height: 7px;
+      content: "";
+      border-radius: 50%;
+      background: #49d9bd;
+      box-shadow: 0 0 0 3px rgba(73, 217, 189, .14);
+    }
+
+    .sidebar-footer p { margin: 9px 0 0; color: #8eaac6; font-size: .75rem; line-height: 1.55; }
+
+    .content { min-width: 0; padding: 0 34px 42px; }
+
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      min-height: 72px;
+      border-bottom: 1px solid rgba(205, 217, 230, .8);
+    }
+
+    .breadcrumb { color: var(--muted); font-size: .83rem; }
+    .breadcrumb strong { color: var(--ink); font-weight: 720; }
+
+    .topbar-meta { display: flex; align-items: center; gap: 10px; }
+
+    .secure-chip,
+    .synthetic-chip,
+    .planner-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      border-radius: 999px;
+      font-size: .73rem;
+      font-weight: 720;
+      white-space: nowrap;
+    }
+
+    .secure-chip { padding: 7px 10px; border: 1px solid #cfe8e1; color: #08735f; background: #f0fbf8; }
+    .secure-chip::before { width: 7px; height: 7px; content: ""; border-radius: 50%; background: #14a38b; }
+
+    .avatar {
+      display: grid;
+      width: 34px;
+      height: 34px;
+      place-items: center;
+      border-radius: 50%;
+      color: #fff;
+      background: linear-gradient(145deg, #7896b6, #4f6e8c);
+      font-size: .73rem;
+      font-weight: 760;
+    }
+
+    .page-header {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 24px;
+      max-width: 1240px;
+      padding: 42px 0 26px;
+      margin: 0 auto;
+    }
+
+    .eyebrow {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin: 0 0 10px;
+      color: var(--blue-dark);
+      font-size: .74rem;
+      font-weight: 780;
+      letter-spacing: .09em;
+      text-transform: uppercase;
+    }
+
+    .eyebrow::before { width: 22px; height: 2px; content: ""; border-radius: 2px; background: var(--blue); }
+
+    h1, h2, h3, p { margin-top: 0; }
+    h1 { margin-bottom: 10px; color: #102a43; font-size: clamp(1.8rem, 3vw, 2.5rem); letter-spacing: -.045em; line-height: 1.12; }
+    .page-summary { max-width: 650px; margin-bottom: 0; color: var(--muted); font-size: .98rem; line-height: 1.65; }
+
+    .synthetic-chip { padding: 9px 12px; border: 1px solid #efd9a6; color: #8a5400; background: #fffaf0; }
+    .synthetic-chip::before { content: "◈"; color: #c27400; font-size: .92rem; }
+
+    .workspace-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 300px;
+      gap: 24px;
+      max-width: 1240px;
+      margin: 0 auto;
+    }
+
+    .card {
+      border: 1px solid rgba(210, 222, 234, .94);
+      border-radius: var(--radius-lg);
+      background: var(--surface);
+      box-shadow: var(--shadow);
+    }
+
+    .assistant-card { overflow: hidden; }
+
+    .card-heading {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 26px 28px 20px;
+      border-bottom: 1px solid #e6edf4;
+    }
+
+    .card-heading h2 { margin-bottom: 5px; color: var(--ink); font-size: 1.1rem; letter-spacing: -.018em; }
+    .card-heading p { margin: 0; color: var(--muted); font-size: .86rem; line-height: 1.5; }
+
+    .mcp-indicator {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      padding: 7px 9px;
+      border-radius: 7px;
+      color: #4b627a;
+      background: #f4f7fa;
+      font-size: .72rem;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .mcp-indicator::before { width: 7px; height: 7px; content: ""; border-radius: 50%; background: #4e8ed5; }
+
+    .notice {
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: 12px;
+      padding: 15px 17px;
+      margin: 20px 28px 0;
+      border: 1px solid #f0d9a9;
+      border-radius: 10px;
+      color: #745322;
+      background: var(--amber-pale);
+      font-size: .82rem;
+      line-height: 1.52;
+    }
+
+    .notice-icon {
+      display: grid;
+      width: 24px;
+      height: 24px;
+      place-items: center;
+      border-radius: 50%;
+      color: #955700;
+      background: #ffe9ba;
+      font-size: .88rem;
+      font-weight: 800;
+    }
+
+    .notice strong { display: block; margin-bottom: 2px; color: #714300; }
+
+    .assistant-form { padding: 24px 28px 28px; }
+
+    .field-label {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 8px;
+      color: #263e56;
+      font-size: .85rem;
+      font-weight: 760;
+    }
+
+    .field-label span { color: var(--soft); font-size: .73rem; font-weight: 600; }
+
+    textarea,
+    input[type="text"] {
+      width: 100%;
+      border: 1px solid #bdcad8;
+      border-radius: 10px;
+      color: var(--ink);
+      background: #fff;
+      transition: border-color .18s ease, box-shadow .18s ease, background .18s ease;
+    }
+
+    textarea { min-height: 142px; padding: 15px 16px; resize: vertical; line-height: 1.55; }
+    input[type="text"] { min-height: 47px; padding: 11px 13px; font-weight: 650; letter-spacing: .025em; }
+    textarea::placeholder, input::placeholder { color: #91a0b1; }
+    textarea:hover, input[type="text"]:hover { border-color: #98adbf; }
+    textarea:focus, input[type="text"]:focus { border-color: var(--blue); box-shadow: 0 0 0 4px rgba(20, 108, 206, .12); outline: none; }
+
+    .input-grid {
+      display: grid;
+      grid-template-columns: minmax(190px, .38fr) minmax(0, 1fr);
+      gap: 20px;
+      padding-top: 20px;
+    }
+
+    .help-text { margin: 8px 0 0; color: var(--muted); font-size: .76rem; line-height: 1.45; }
+
+    .quick-prompts { margin-top: 20px; }
+    .quick-prompts-header { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 9px; }
+    .quick-prompts-header strong { color: #364e66; font-size: .78rem; }
+    .quick-prompts-header span { color: var(--soft); font-size: .75rem; }
+    .prompt-options { display: flex; flex-wrap: wrap; gap: 8px; }
+
+    .prompt-option {
+      padding: 8px 10px;
+      border: 1px solid #d4e0ec;
+      border-radius: 8px;
+      color: #2f587e;
+      background: #f9fbfd;
+      font-size: .76rem;
+      font-weight: 680;
+      transition: border-color .18s ease, color .18s ease, background .18s ease, transform .18s ease;
+    }
+
+    .prompt-option:hover { border-color: #94bee9; color: var(--blue-dark); background: var(--blue-pale); transform: translateY(-1px); }
+
+    .confirmation {
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: 11px;
+      padding: 14px;
+      margin: 22px 0 0;
+      border: 1px solid #d6e0ea;
+      border-radius: 10px;
+      color: #435a70;
+      background: #fafcfe;
+      cursor: pointer;
+      font-size: .82rem;
+      line-height: 1.48;
+    }
+
+    .confirmation:hover { border-color: #b8cbdd; }
+    .confirmation input { width: 17px; height: 17px; margin: 2px 0 0; accent-color: var(--blue); }
+    .confirmation strong { color: #263e56; }
+
+    .form-footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding-top: 20px;
+    }
+
+    #status {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-height: 20px;
+      margin: 0;
+      color: var(--muted);
+      font-size: .79rem;
+      line-height: 1.35;
+    }
+
+    #status::before { width: 7px; height: 7px; content: ""; border-radius: 50%; background: #8aa0b4; }
+    #status[data-state="loading"]::before { background: var(--blue); box-shadow: 0 0 0 4px rgba(20, 108, 206, .12); animation: pulse 1.2s ease-in-out infinite; }
+    #status[data-state="success"]::before { background: var(--mint); }
+    #status[data-state="error"]::before { background: var(--danger); }
+
+    @keyframes pulse { 50% { opacity: .45; transform: scale(.72); } }
+
+    .primary-button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 9px;
+      min-height: 46px;
+      padding: 0 18px;
+      border: 1px solid var(--blue-dark);
+      border-radius: 9px;
+      color: #fff;
+      background: linear-gradient(180deg, #1f79da, #1264bd);
+      box-shadow: 0 8px 16px rgba(20, 94, 181, .22);
+      font-size: .87rem;
+      font-weight: 760;
+      transition: box-shadow .18s ease, transform .18s ease, background .18s ease;
+    }
+
+    .primary-button:hover:not(:disabled) { background: linear-gradient(180deg, #2381e8, #0f59ae); box-shadow: 0 10px 20px rgba(20, 94, 181, .28); transform: translateY(-1px); }
+    .primary-button:disabled { cursor: wait; opacity: .75; }
+    .button-arrow { font-size: 1rem; line-height: 1; transition: transform .18s ease; }
+    .primary-button:hover:not(:disabled) .button-arrow { transform: translateX(2px); }
+
+    .support-column { display: grid; align-content: start; gap: 16px; }
+    .support-card { padding: 20px; box-shadow: var(--shadow-soft); }
+    .support-card h2 { margin-bottom: 12px; color: var(--ink); font-size: .95rem; letter-spacing: -.012em; }
+    .support-card > p { color: var(--muted); font-size: .79rem; line-height: 1.55; }
+
+    .workflow { display: grid; gap: 15px; margin: 0; padding: 0; list-style: none; }
+    .workflow li { position: relative; display: grid; grid-template-columns: 28px 1fr; gap: 10px; align-items: start; }
+    .workflow li:not(:last-child)::after { position: absolute; top: 31px; bottom: -13px; left: 13px; width: 1px; content: ""; background: #d7e4f0; }
+    .workflow-number { display: grid; width: 27px; height: 27px; place-items: center; border-radius: 50%; color: #1a67af; background: #eaf3ff; font-size: .67rem; font-weight: 800; }
+    .workflow strong { display: block; margin-bottom: 2px; color: #314a63; font-size: .8rem; }
+    .workflow span { display: block; color: var(--muted); font-size: .74rem; line-height: 1.4; }
+
+    .record-list { display: grid; gap: 8px; }
+    .record-button {
+      display: grid;
+      grid-template-columns: 38px 1fr auto;
+      gap: 10px;
+      align-items: center;
+      width: 100%;
+      padding: 10px;
+      border: 1px solid #dce6f0;
+      border-radius: 10px;
+      color: inherit;
+      background: #fff;
+      text-align: left;
+      transition: border-color .18s ease, box-shadow .18s ease, transform .18s ease;
+    }
+
+    .record-button:hover { border-color: #9cc4ec; box-shadow: 0 4px 12px rgba(18, 72, 127, .08); transform: translateY(-1px); }
+    .record-id { display: grid; width: 38px; height: 32px; place-items: center; border-radius: 7px; color: #2469a7; background: #eaf3ff; font-size: .68rem; font-weight: 800; }
+    .record-button strong { display: block; color: #344f68; font-size: .77rem; }
+    .record-button small { display: block; margin-top: 2px; color: var(--soft); font-size: .69rem; }
+    .record-arrow { color: #6f8eaa; font-size: 1rem; }
+
+    .help-card { border-color: #dce9e6; background: linear-gradient(145deg, #ffffff, #f3fbf9); }
+    .help-card p { margin-bottom: 0; }
+    .help-card strong { color: #167561; }
+
+    #result-panel {
+      max-width: 1240px;
+      padding-top: 24px;
+      margin: 0 auto;
+    }
+
+    .result-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 14px;
+    }
+
+    .result-header h2 { margin: 0; color: var(--ink); font-size: 1.18rem; letter-spacing: -.018em; }
+    .result-header p { margin: 4px 0 0; color: var(--muted); font-size: .8rem; }
+
+    .planner-badge { min-height: 30px; padding: 7px 10px; border: 1px solid #d6e1ec; color: #51687e; background: #fff; }
+    .planner-badge:empty { display: none; }
+    .planner-badge[data-mode="llm"] { border-color: #bde5da; color: #05715d; background: var(--mint-pale); }
+    .planner-badge[data-mode="deterministic"] { border-color: #d3e3f3; color: #32608a; background: #f2f7fd; }
+    .planner-badge[data-mode="deterministic-fallback"] { border-color: #f0d8a4; color: #8c5600; background: #fff8e9; }
+
+    .result-layout { display: grid; grid-template-columns: minmax(0, 1fr) 330px; gap: 18px; }
+    .result-section { padding: 23px; border: 1px solid #dce6ef; border-radius: var(--radius-md); background: #fff; box-shadow: var(--shadow-soft); }
+    .result-section h3 { margin-bottom: 12px; color: #263f58; font-size: .93rem; }
+
+    .answer-section { min-height: 206px; }
+    #answer { margin: 0; color: #213b55; white-space: pre-wrap; font-size: .94rem; line-height: 1.7; }
+
+    .citation-list,
+    .trace-list { display: grid; gap: 10px; padding: 0; margin: 0; list-style: none; }
+    .citation-list li { padding: 13px; border: 1px solid #dbe6f0; border-left: 3px solid #67a6e1; border-radius: 8px; background: #fbfdff; }
+    .citation-source { display: block; margin-bottom: 5px; color: #285d91; font-size: .78rem; }
+    .citation-snippet { color: #536a80; font-size: .78rem; line-height: 1.48; }
+
+    .evidence-section { grid-column: 1 / -1; }
+    .evidence-intro { margin: -4px 0 16px; color: var(--muted); font-size: .79rem; line-height: 1.48; }
+    .trace-list { grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); counter-reset: trace; }
+    .trace-list > li { position: relative; padding: 17px; border: 1px solid #dce6ef; border-radius: 10px; background: #fbfdff; counter-increment: trace; }
+    .trace-list > li::before { position: absolute; top: 16px; right: 16px; display: grid; width: 23px; height: 23px; place-items: center; content: counter(trace); border-radius: 50%; color: #5a7c9e; background: #eaf2f9; font-size: .68rem; font-weight: 800; }
+    .tool-name { display: block; padding-right: 34px; color: #155a9f; font-size: .84rem; overflow-wrap: anywhere; }
+    .trace-label { display: block; margin: 14px 0 6px; color: #657b91; font-size: .68rem; font-weight: 760; letter-spacing: .07em; text-transform: uppercase; }
+
+    pre {
+      max-height: 210px;
+      padding: 11px;
+      margin: 0;
+      overflow: auto;
+      border: 1px solid #e2e9f0;
+      border-radius: 7px;
+      color: #38536d;
+      background: #f4f7fa;
+      font: 500 .73rem/1.55 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      overflow-wrap: anywhere;
+      white-space: pre-wrap;
+    }
+
+    .raw-response {
+      grid-column: 1 / -1;
+      padding: 0 4px;
+    }
+
+    .raw-response summary { padding: 12px 0; color: #526d87; cursor: pointer; font-size: .79rem; font-weight: 720; }
+    .raw-response[open] summary { color: #155a9f; }
+    .raw-response pre { margin-bottom: 8px; }
+
+    .empty-item { padding: 12px !important; border-style: dashed !important; border-left-width: 1px !important; color: var(--muted); font-size: .79rem; }
+
+    @media (max-width: 1040px) {
+      .content { padding: 0 24px 34px; }
+      .workspace-grid { grid-template-columns: minmax(0, 1fr) 268px; }
+      .result-layout { grid-template-columns: minmax(0, 1fr) 285px; }
+    }
+
+    @media (max-width: 820px) {
+      .app-shell { display: block; }
+      .sidebar { position: static; min-height: auto; padding: 16px 20px; }
+      .brand { padding: 0; }
+      .workspace-label, .sidebar-nav, .sidebar-footer { display: none; }
+      .content { padding: 0 18px 28px; }
+      .topbar { min-height: 60px; }
+      .breadcrumb { font-size: .77rem; }
+      .avatar { display: none; }
+      .page-header { padding: 28px 0 20px; }
+      .workspace-grid, .result-layout { grid-template-columns: 1fr; }
+      .support-column { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .help-card { grid-column: 1 / -1; }
+      .evidence-section { grid-column: auto; }
+    }
+
+    @media (max-width: 580px) {
+      .topbar-meta .secure-chip { display: none; }
+      .page-header { display: block; }
+      .synthetic-chip { display: inline-flex; margin-top: 16px; }
+      .card-heading, .assistant-form { padding-right: 18px; padding-left: 18px; }
+      .notice { margin-right: 18px; margin-left: 18px; }
+      .card-heading { display: block; }
+      .mcp-indicator { margin-top: 12px; }
+      .input-grid, .support-column { grid-template-columns: 1fr; }
+      .form-footer { align-items: stretch; flex-direction: column-reverse; }
+      .primary-button { width: 100%; }
+      .result-header { align-items: flex-start; flex-direction: column; }
+      .result-section { padding: 18px; }
+      .trace-list { grid-template-columns: 1fr; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+    }
   </style>
 </head>
 <body>
-  <main>
-    <h1>ClearHR</h1>
-    <div class="notice" role="alert">
-      <strong>Synthetic demo only — do not enter real personal information.</strong>
-      This app uses mock employee records and sample policies. Do not enter real names, employee IDs,
-      contact details, payroll data, health information, performance details, or workplace reports.
-    </div>
+  <div class="app-shell">
+    <aside class="sidebar" aria-label="ClearHR workspace navigation">
+      <a class="brand" href="#ask" aria-label="ClearHR home">
+        <span class="brand-mark" aria-hidden="true"></span>
+        <span>
+          <span class="brand-name">ClearHR</span>
+          <span class="brand-subtitle">Policy workspace</span>
+        </span>
+      </a>
 
-    <label for="message">HR policy question</label>
-    <textarea id="message" rows="5" autocomplete="off">Can I take three days of PTO next week?</textarea>
+      <p class="workspace-label">Demo workspace</p>
+      <nav class="sidebar-nav" aria-label="Page sections">
+        <a href="#ask" aria-current="page"><span class="nav-icon" aria-hidden="true">↗</span>Ask ClearHR</a>
+        <a href="#evidence"><span class="nav-icon" aria-hidden="true">≡</span>Evidence trace</a>
+        <a href="#demo-records"><span class="nav-icon" aria-hidden="true">◇</span>Demo records</a>
+      </nav>
 
-    <div class="row">
-      <label for="employee">Synthetic employee ID</label>
-      <input id="employee" value="E1001" inputmode="text" autocomplete="off" aria-describedby="employee-hint">
-      <button id="ask-button" type="button">Ask ClearHR</button>
-    </div>
-    <p id="employee-hint" class="hint">Optional: use only a sample ID such as E1001.</p>
-
-    <label class="confirmation" for="confirm-mock-action">
-      <input id="confirm-mock-action" type="checkbox">
-      <span>
-        I explicitly authorize ClearHR to prepare a <strong>mock</strong> HR case draft if my synthetic
-        demo request requires it. No real case is submitted and leaving this unchecked sends no mock action.
-      </span>
-    </label>
-
-    <p class="hint">Try PTO guidance (E1001), international remote work (E1003), or a benefits question.</p>
-    <p id="status" aria-live="polite">Ready.</p>
-    <section id="result-panel" hidden aria-live="polite">
-      <div class="result-section">
-        <h2>Final answer or action</h2>
-        <p id="answer"></p>
-        <p id="planner" class="hint"></p>
+      <div class="sidebar-footer">
+        <span class="environment-badge">Synthetic environment</span>
+        <p>Built for a safe agentic-workflow demonstration. No real HR records are stored or submitted.</p>
       </div>
-      <div class="result-section">
-        <h2>Retrieved citations</h2>
-        <ul id="citations" class="citation-list"></ul>
+    </aside>
+
+    <main class="content">
+      <header class="topbar">
+        <div class="breadcrumb"><strong>Employee experience</strong> <span aria-hidden="true">/</span> Policy assistant</div>
+        <div class="topbar-meta">
+          <span class="secure-chip">Safety controls active</span>
+          <span class="avatar" aria-label="Demo workspace">DH</span>
+        </div>
+      </header>
+
+      <section class="page-header" aria-labelledby="page-title">
+        <div>
+          <p class="eyebrow">HR operations</p>
+          <h1 id="page-title">Clear, evidence-backed HR guidance.</h1>
+          <p class="page-summary">Ask a policy question, review the retrieved evidence, and see the exact MCP tools used to prepare each answer.</p>
+        </div>
+        <span class="synthetic-chip">Synthetic data only</span>
+      </section>
+
+      <div class="workspace-grid">
+        <section class="assistant-card card" id="ask" aria-labelledby="assistant-title">
+          <header class="card-heading">
+            <div>
+              <h2 id="assistant-title">Ask the policy assistant</h2>
+              <p>Use a sample question and synthetic employee ID to explore the guided workflow.</p>
+            </div>
+            <span class="mcp-indicator">MCP evidence workflow</span>
+          </header>
+
+          <div class="notice" role="note" aria-label="Important synthetic-data notice">
+            <span class="notice-icon" aria-hidden="true">!</span>
+            <div>
+              <strong>Synthetic demo only — do not enter real personal information.</strong>
+              This app uses mock employee records and sample policies. Do not enter real names, employee IDs, contact details, payroll data, health information, performance details, or workplace reports.
+            </div>
+          </div>
+
+          <form id="assistant-form" class="assistant-form">
+            <label class="field-label" for="message">HR policy question <span>Required</span></label>
+            <textarea id="message" rows="5" autocomplete="off" required minlength="3" aria-describedby="message-help">Can I take three days of PTO next week?</textarea>
+            <p id="message-help" class="help-text">Describe the policy question in plain language. ClearHR retrieves only the evidence needed for this mock request.</p>
+
+            <div class="input-grid">
+              <div>
+                <label class="field-label" for="employee">Synthetic employee ID <span>Optional</span></label>
+                <input id="employee" type="text" value="E1001" inputmode="text" autocomplete="off" pattern="E[0-9]{4}" aria-describedby="employee-hint">
+                <p id="employee-hint" class="help-text">Use only a sample ID such as E1001.</p>
+              </div>
+
+              <div class="quick-prompts" aria-labelledby="quick-prompts-label">
+                <div class="quick-prompts-header">
+                  <strong id="quick-prompts-label">Quick-start scenarios</strong>
+                  <span>Loads a safe sample</span>
+                </div>
+                <div class="prompt-options">
+                  <button class="prompt-option" type="button" data-scenario="pto">PTO guidance · E1001</button>
+                  <button class="prompt-option" type="button" data-scenario="remote">Remote work · E1003</button>
+                  <button class="prompt-option" type="button" data-scenario="benefits">Benefits eligibility · E1002</button>
+                </div>
+              </div>
+            </div>
+
+            <label class="confirmation" for="confirm-mock-action">
+              <input id="confirm-mock-action" type="checkbox">
+              <span>
+                I explicitly authorize ClearHR to prepare a <strong>mock</strong> HR case draft if my synthetic demo request requires it. No real case is submitted and leaving this unchecked sends no mock action.
+              </span>
+            </label>
+
+            <div class="form-footer">
+              <p id="status" aria-live="polite" data-state="idle">Ready for a synthetic demo request.</p>
+              <button id="ask-button" class="primary-button" type="submit">
+                <span id="ask-button-label">Ask ClearHR</span><span class="button-arrow" aria-hidden="true">→</span>
+              </button>
+            </div>
+          </form>
+        </section>
+
+        <aside class="support-column" aria-label="Workflow guidance">
+          <section class="support-card card">
+            <h2>How the workflow works</h2>
+            <ol class="workflow">
+              <li><span class="workflow-number">01</span><span><strong>Frame a question</strong><span>Start with a mock HR policy need.</span></span></li>
+              <li><span class="workflow-number">02</span><span><strong>Retrieve evidence</strong><span>The agent calls the right MCP tools and records the outputs.</span></span></li>
+              <li><span class="workflow-number">03</span><span><strong>Review the answer</strong><span>Inspect citations and the trace before relying on it.</span></span></li>
+            </ol>
+          </section>
+
+          <section class="support-card card" id="demo-records" aria-labelledby="records-title">
+            <h2 id="records-title">Synthetic demo records</h2>
+            <div class="record-list">
+              <button class="record-button" type="button" data-scenario="pto"><span class="record-id">E1001</span><span><strong>PTO request</strong><small>New York · 40 available hours</small></span><span class="record-arrow" aria-hidden="true">→</span></button>
+              <button class="record-button" type="button" data-scenario="benefits"><span class="record-id">E1002</span><span><strong>Benefits check</strong><small>Remote · part-time status</small></span><span class="record-arrow" aria-hidden="true">→</span></button>
+              <button class="record-button" type="button" data-scenario="remote"><span class="record-id">E1003</span><span><strong>International remote work</strong><small>California · San Francisco</small></span><span class="record-arrow" aria-hidden="true">→</span></button>
+            </div>
+          </section>
+
+          <section class="support-card help-card card">
+            <h2>Designed for review</h2>
+            <p><strong>Every answer includes its evidence trail.</strong> The returned citations and bounded tool-result previews make the agent’s work visible for your presentation.</p>
+          </section>
+        </aside>
       </div>
-      <div class="result-section">
-        <h2>MCP tool calls</h2>
-        <p class="hint">Each entry shows the tool name, exact arguments sent, and a safely bounded returned-result preview.</p>
-        <ol id="trace" class="trace-list"></ol>
-      </div>
-      <details>
-        <summary>Raw response JSON</summary>
-        <pre id="response"></pre>
-      </details>
-    </section>
-  </main>
+
+      <section id="result-panel" hidden tabindex="-1" aria-labelledby="result-title">
+        <header class="result-header">
+          <div>
+            <h2 id="result-title">Response workspace</h2>
+            <p>Review the final answer, supporting citations, and agent activity.</p>
+          </div>
+          <span id="planner" class="planner-badge"></span>
+        </header>
+
+        <div class="result-layout">
+          <section class="result-section answer-section">
+            <h3>Final answer or action</h3>
+            <p id="answer"></p>
+          </section>
+
+          <section class="result-section citation-section">
+            <h3>Retrieved citations</h3>
+            <ul id="citations" class="citation-list"></ul>
+          </section>
+
+          <section class="result-section evidence-section" id="evidence">
+            <h3>MCP tool calls</h3>
+            <p class="evidence-intro">Each entry shows the tool name, exact arguments sent, and a safely bounded returned-result preview.</p>
+            <ol id="trace" class="trace-list"></ol>
+          </section>
+
+          <details class="raw-response">
+            <summary>Raw response JSON</summary>
+            <pre id="response"></pre>
+          </details>
+        </div>
+      </section>
+    </main>
+  </div>
+
   <script>
     const messageInput = document.getElementById("message");
     const employeeInput = document.getElementById("employee");
     const confirmationInput = document.getElementById("confirm-mock-action");
     const askButton = document.getElementById("ask-button");
+    const askButtonLabel = document.getElementById("ask-button-label");
+    const assistantForm = document.getElementById("assistant-form");
     const status = document.getElementById("status");
     const resultPanel = document.getElementById("result-panel");
     const answer = document.getElementById("answer");
@@ -95,14 +777,50 @@
     const trace = document.getElementById("trace");
     const response = document.getElementById("response");
 
+    const scenarios = {
+      pto: {
+        employee: "E1001",
+        message: "Can I take three days of PTO next week?",
+      },
+      remote: {
+        employee: "E1003",
+        message: "I am based in California and want to work from Portugal for six weeks. What approvals and security requirements apply?",
+      },
+      benefits: {
+        employee: "E1002",
+        message: "Am I eligible for benefits, and do I have enough PTO for two days off?",
+      },
+    };
+
     function json(value) {
       return JSON.stringify(value ?? null, null, 2);
+    }
+
+    function setStatus(message, state = "idle") {
+      status.textContent = message;
+      status.dataset.state = state;
+    }
+
+    function setPlanner(plannerName) {
+      planner.textContent = plannerName ? `Planner used: ${plannerName}` : "";
+      if (plannerName) {
+        planner.dataset.mode = plannerName;
+      } else {
+        delete planner.dataset.mode;
+      }
+    }
+
+    function createEmptyItem(text) {
+      const empty = document.createElement("li");
+      empty.className = "empty-item";
+      empty.textContent = text;
+      return empty;
     }
 
     function clearResults() {
       resultPanel.hidden = true;
       answer.textContent = "";
-      planner.textContent = "";
+      setPlanner("");
       citations.replaceChildren();
       trace.replaceChildren();
       response.textContent = "";
@@ -110,16 +828,17 @@
 
     function renderCitations(items) {
       if (!Array.isArray(items) || items.length === 0) {
-        const empty = document.createElement("li");
-        empty.textContent = "No policy citation was returned for this response.";
-        citations.append(empty);
+        citations.append(createEmptyItem("No policy citation was returned for this response."));
         return;
       }
+
       for (const citation of items) {
         const item = document.createElement("li");
         const source = document.createElement("strong");
+        source.className = "citation-source";
         source.textContent = `${citation.document || "Unknown document"} — ${citation.section || "Unknown section"}`;
         const snippet = document.createElement("div");
+        snippet.className = "citation-snippet";
         snippet.textContent = citation.snippet || "No snippet returned.";
         item.append(source, snippet);
         citations.append(item);
@@ -128,44 +847,70 @@
 
     function renderTrace(steps) {
       if (!Array.isArray(steps) || steps.length === 0) {
-        const empty = document.createElement("li");
-        empty.textContent = "No MCP tool call was needed for this response.";
-        trace.append(empty);
+        trace.append(createEmptyItem("No MCP tool call was needed for this response."));
         return;
       }
+
       for (const step of steps) {
         const item = document.createElement("li");
-        const tool = document.createElement("span");
+        const tool = document.createElement("strong");
         tool.className = "tool-name";
         tool.textContent = step.tool || "Unknown MCP tool";
+
         const argumentsLabel = document.createElement("span");
         argumentsLabel.className = "trace-label";
         argumentsLabel.textContent = "Arguments sent";
         const arguments = document.createElement("pre");
         arguments.textContent = json(step.arguments);
+
         const resultLabel = document.createElement("span");
         resultLabel.className = "trace-label";
         resultLabel.textContent = "Returned result preview";
         const result = document.createElement("pre");
         result.textContent = json(step.result_preview ?? step.result_summary);
+
         item.append(tool, argumentsLabel, arguments, resultLabel, result);
         trace.append(item);
       }
     }
 
+    function renderUnavailableEvidence() {
+      citations.append(createEmptyItem("Citations are unavailable because the request did not complete."));
+      trace.append(createEmptyItem("No MCP activity is available because the request did not complete."));
+    }
+
     function renderResult(body) {
       resultPanel.hidden = false;
       answer.textContent = body.answer || body.detail || "No answer was returned.";
-      planner.textContent = body.planner ? `Planner used: ${body.planner}` : "";
-      renderCitations(body.citations);
-      renderTrace(body.trace);
+      setPlanner(body.planner);
+      if (body.answer || body.planner || Array.isArray(body.citations) || Array.isArray(body.trace)) {
+        renderCitations(body.citations);
+        renderTrace(body.trace);
+      } else {
+        renderUnavailableEvidence();
+      }
       response.textContent = json(body);
     }
 
-    async function ask() {
-      askButton.disabled = true;
-      status.textContent = "Asking ClearHR…";
+    function loadScenario(name) {
+      const scenario = scenarios[name];
+      if (!scenario) return;
+      messageInput.value = scenario.message;
+      employeeInput.value = scenario.employee;
       clearResults();
+      setStatus(`Loaded the ${scenario.employee} synthetic demo scenario.`, "idle");
+      messageInput.focus();
+    }
+
+    async function ask() {
+      if (!assistantForm.reportValidity()) return;
+
+      askButton.disabled = true;
+      askButton.setAttribute("aria-busy", "true");
+      askButtonLabel.textContent = "Preparing response…";
+      setStatus("ClearHR is retrieving policy evidence and synthetic record details…", "loading");
+      clearResults();
+
       try {
         const result = await fetch("/chat", {
           method: "POST",
@@ -178,19 +923,35 @@
           cache: "no-store",
         });
         const body = await result.json().catch(() => ({ detail: "The service returned an invalid response." }));
-        status.textContent = result.ok ? "Response received." : `Request failed (${result.status}).`;
+        setStatus(result.ok ? "Response received. Review the evidence trace below." : `Request failed (${result.status}).`, result.ok ? "success" : "error");
         renderResult(body);
       } catch (_) {
-        status.textContent = "Request failed.";
+        setStatus("Request failed. Please retry.", "error");
         renderResult({ detail: "Unable to contact ClearHR. Please retry." });
       } finally {
         // Require a deliberate confirmation for each individual request.
         confirmationInput.checked = false;
         askButton.disabled = false;
+        askButton.removeAttribute("aria-busy");
+        askButtonLabel.textContent = "Ask ClearHR";
       }
     }
 
-    askButton.addEventListener("click", ask);
+    assistantForm.addEventListener("submit", (event) => {
+      event.preventDefault();
+      ask();
+    });
+
+    document.querySelectorAll("[data-scenario]").forEach((button) => {
+      button.addEventListener("click", () => loadScenario(button.dataset.scenario));
+    });
+
+    messageInput.addEventListener("keydown", (event) => {
+      if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
+        event.preventDefault();
+        assistantForm.requestSubmit();
+      }
+    });
   </script>
 </body>
 </html>
