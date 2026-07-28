@@ -2,10 +2,15 @@
 
 ## URLs
 
-- Application URL: **Not deployed yet**
-- Health endpoint URL: **Not deployed yet**
+- Application URL: https://web-production-32831.up.railway.app
+- Health endpoint URL: https://web-production-32831.up.railway.app/health
 
-Replace both values after deployment. Example: `https://clearhr.example.com` and `https://clearhr.example.com/health`.
+Host: Railway. Verified on 2026-07-28: `/health` returned HTTP 200 in 274 ms
+with `status: ok`, `mcp_connected: true`, and `mcp_tool_count: 6`.
+
+The service currently runs the deterministic planner; `ANTHROPIC_API_KEY` is not
+yet set in the host variables, so `/chat` reports `planner: "deterministic"`.
+Re-verify and update this note once the key is added.
 
 ## Deployment configuration
 
