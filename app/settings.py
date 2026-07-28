@@ -24,10 +24,11 @@ MIN_SUPPORT = float(os.getenv("MIN_SUPPORT", "0.34"))
 # LLM planner. Absent an API key the agent falls back to deterministic routing,
 # which keeps CI hermetic and the app runnable with no credentials at all.
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
-# An OpenAI model that supports function/tool calling. Override this in the host
-# environment to use a different one; the planner discovers its tools from MCP
-# and does not depend on any model-specific behaviour.
-OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+# GPT-5.6 Sol is the explicit flagship target for this project. The planner
+# retains Chat Completions function tools, so it supplies the GPT-5.6-compatible
+# ``reasoning_effort="none"`` option in app.planner. Override this only with a
+# model your account can use and whose Chat Completions tool behavior you test.
+OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-5.6-sol")
 MAX_TOOL_ITERATIONS = int(os.getenv("MAX_TOOL_ITERATIONS", "6"))
 # Bound external/provider and local-tool waits so one stalled dependency cannot
 # hold an HTTP request forever on a small free-tier service.

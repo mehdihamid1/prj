@@ -38,7 +38,9 @@ Open `http://127.0.0.1:8000` and try `E1001` with *"Can I take three days of PTO
 | `GET /health` | App status and MCP connectivity |
 | `GET /tools` | Live MCP tool schemas as discovered by the agent |
 
-**Without an API key the app still runs.** It falls back to a deterministic rule-based planner over the same MCP tools, so every endpoint works and the test suite passes with no credentials. With `OPENAI_API_KEY` set, an LLM chooses the tools instead. In that mode, the user prompt and the tool schemas/results needed for the turn are sent to OpenAI; use this only with the repository's synthetic coursework data. Before recording the demo, use a real key and a model identifier accepted by your OpenAI account, then rerun the evaluation.
+**Without an API key the app still runs.** It falls back to a deterministic rule-based planner over the same MCP tools, so every endpoint works and the test suite passes with no credentials. With `OPENAI_API_KEY` set, an LLM chooses the tools instead. The default model is `gpt-5.6-sol`; it requires a funded account with access to that model. In that mode, the user prompt and the tool schemas/results needed for the turn are sent to OpenAI; use this only with the repository's synthetic coursework data. Before recording the demo, use a real key and rerun the evaluation.
+
+ClearHR keeps its explicit Chat Completions + MCP function-tool loop. For GPT-5.6, it explicitly sends `reasoning_effort="none"`, which is required for that endpoint's function-tool compatibility. Moving the planner to the Responses API to combine model reasoning with tools is a separate, unimplemented migration.
 
 If a non-empty key produces `planner: "deterministic-fallback"`, the provider call failed after the fallback path was selected. Inspect the secure host log for the exact exception. For temporary local troubleshooting, set `EXPOSE_PLANNER_ERRORS=true`; the response then includes only the exception class, HTTP status, and provider error code—not raw provider text. Turn it off before a public demo or deployment.
 

@@ -61,6 +61,21 @@ TRACE_PREVIEW_ITEMS = 4
 TRACE_PREVIEW_CHARS = 240
 
 
+def _chat_tool_model_options(model: str) -> dict[str, str]:
+    """Return the compatibility fields for the active Chat Completions model.
+
+    GPT-5.6 supports function calling, but its Chat Completions tool path
+    requires effective ``reasoning_effort="none"``. ClearHR deliberately keeps
+    its existing explicit MCP tool loop rather than changing API surfaces as
+    part of a model migration. Non-GPT-5.6 overrides retain their old request
+    shape so a deliberately configured compatible model is not sent an
+    unsupported field.
+    """
+    if model.startswith("gpt-5.6"):
+        return {"reasoning_effort": "none"}
+    return {}
+
+
 def _to_openai_tools(discovered: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Map discovered MCP schemas onto the Chat Completions tool shape.
 
@@ -221,13 +236,15 @@ async def respond(
     record_evidence = False
 
     for _ in range(settings.MAX_TOOL_ITERATIONS):
-        response = await client.chat.completions.create(
-            model=settings.OPENAI_MODEL,
+        completion_request: dict[str, Any] = {
+            "model": settings.OPENAI_MODEL,
             # HR answers are short. A small bound controls demo cost and latency.
-            max_completion_tokens=2048,
-            tools=tools,
-            messages=messages,
-        )
+            "max_completion_tokens": 2048,
+            "tools": tools,
+            "messages": messages,
+        }
+        completion_request.update(_chat_tool_model_options(settings.OPENAI_MODEL))
+        response = await client.chat.completions.create(**completion_request)
 
         choice = response.choices[0]
         reply = choice.message

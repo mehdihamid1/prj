@@ -120,6 +120,11 @@ def test_planner_dispatches_tool_call_and_records_trace(monkeypatch):
     assert result["planner"] == "llm"
     assert "five calendar days" in result["answer"]
 
+    # GPT-5.6 Chat Completions function tools require effective no-reasoning.
+    assert stub.seen[0]["model"] == "gpt-5.6-sol"
+    assert stub.seen[0]["reasoning_effort"] == "none"
+    assert all(request["reasoning_effort"] == "none" for request in stub.seen)
+
     # The tool actually ran through the MCP layer and produced real citations.
     assert [step["tool"] for step in result["trace"]] == ["search_policy_documents"]
     assert result["trace"][0]["arguments"] == {"query": "PTO notice", "limit": 2}
@@ -136,6 +141,10 @@ def test_planner_dispatches_tool_call_and_records_trace(monkeypatch):
     assert followup[-1]["role"] == "tool"
     assert followup[-1]["tool_call_id"] == "call_stub"
     assert followup[-2]["role"] == "assistant" and followup[-2]["tool_calls"]
+
+
+def test_non_gpt56_override_keeps_the_existing_chat_request_shape():
+    assert planner._chat_tool_model_options("gpt-4o-mini") == {}
 
 
 def test_system_prompt_is_sent_as_a_system_message(monkeypatch):
