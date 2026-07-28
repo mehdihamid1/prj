@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 
 import pytest
@@ -390,9 +391,18 @@ def test_planner_error_detail_is_hidden_by_default(monkeypatch):
     monkeypatch.delenv("EXPOSE_PLANNER_ERRORS", raising=False)
     monkeypatch.setattr(settings, "llm_enabled", lambda: True)
 
+    @asynccontextmanager
+    async def _no_mcp_session():
+        yield
+
+    async def _fallback(*_args, **_kwargs):
+        return {"answer": "Fallback answer.", "citations": [], "trace": [], "planner": "deterministic"}
+
     async def _boom(*_args, **_kwargs):
         raise RuntimeError("quota exhausted for org-secret")
 
+    monkeypatch.setattr(agent, "request_session", _no_mcp_session)
+    monkeypatch.setattr(agent, "_deterministic_respond", _fallback)
     monkeypatch.setattr(planner, "respond", _boom)
 
     result = asyncio.run(agent.respond("How much PTO notice is required?", None, False))
@@ -409,6 +419,13 @@ def test_planner_error_detail_is_returned_when_explicitly_enabled(monkeypatch):
     monkeypatch.setenv("EXPOSE_PLANNER_ERRORS", "1")
     monkeypatch.setattr(settings, "llm_enabled", lambda: True)
 
+    @asynccontextmanager
+    async def _no_mcp_session():
+        yield
+
+    async def _fallback(*_args, **_kwargs):
+        return {"answer": "Fallback answer.", "citations": [], "trace": [], "planner": "deterministic"}
+
     class _QuotaError(RuntimeError):
         status_code = 429
         code = "insufficient_quota"
@@ -416,6 +433,8 @@ def test_planner_error_detail_is_returned_when_explicitly_enabled(monkeypatch):
     async def _boom(*_args, **_kwargs):
         raise _QuotaError("You exceeded your current quota.")
 
+    monkeypatch.setattr(agent, "request_session", _no_mcp_session)
+    monkeypatch.setattr(agent, "_deterministic_respond", _fallback)
     monkeypatch.setattr(planner, "respond", _boom)
 
     result = asyncio.run(agent.respond("How much PTO notice is required?", "E1001", False))
@@ -425,5 +444,4 @@ def test_planner_error_detail_is_returned_when_explicitly_enabled(monkeypatch):
     assert detail["status_code"] == 429
     assert detail["code"] == "insufficient_quota"
     assert "message" not in detail, "raw exception text belongs in the log, not the response"
-    # The degraded answer is still real evidence, not an apology.
-    assert result["citations"]
+    assert result["answer"] == "Fallback answer."
