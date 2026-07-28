@@ -8,6 +8,7 @@ anything about model behaviour, which cannot be tested deterministically.
 from __future__ import annotations
 
 import asyncio
+import json
 from dataclasses import dataclass, field
 
 import pytest
@@ -16,27 +17,54 @@ from app import planner
 
 
 @dataclass
-class _TextBlock:
-    text: str
-    type: str = "text"
+class _Function:
+    name: str
+    arguments: str
 
 
 @dataclass
-class _ToolUseBlock:
-    name: str
-    input: dict
-    id: str = "toolu_stub"
-    type: str = "tool_use"
+class _ToolCall:
+    function: _Function
+    id: str = "call_stub"
+    type: str = "function"
+
+
+def _tool_call(name: str, arguments: dict, call_id: str = "call_stub") -> _ToolCall:
+    """Chat Completions serialises tool arguments as a JSON string."""
+    return _ToolCall(function=_Function(name=name, arguments=json.dumps(arguments)), id=call_id)
+
+
+@dataclass
+class _Message:
+    content: str | None = None
+    tool_calls: list | None = None
+    refusal: str | None = None
+    role: str = "assistant"
+
+
+@dataclass
+class _Choice:
+    message: _Message
+    finish_reason: str
 
 
 @dataclass
 class _Response:
-    content: list
-    stop_reason: str
+    choices: list
+
+
+def _text(text: str) -> _Response:
+    return _Response(choices=[_Choice(message=_Message(content=text), finish_reason="stop")])
+
+
+def _calls(*tool_calls: _ToolCall) -> _Response:
+    return _Response(choices=[
+        _Choice(message=_Message(tool_calls=list(tool_calls)), finish_reason="tool_calls")
+    ])
 
 
 @dataclass
-class _StubMessages:
+class _StubCompletions:
     """Replays a scripted sequence of responses and records what it was sent."""
 
     script: list[_Response]
@@ -48,39 +76,42 @@ class _StubMessages:
 
 
 @dataclass
+class _StubChat:
+    completions: _StubCompletions
+
+
+@dataclass
 class _StubClient:
-    messages: _StubMessages
+    chat: _StubChat
 
 
-def _install(monkeypatch, script: list[_Response]) -> _StubMessages:
-    stub = _StubMessages(script=script)
+def _install(monkeypatch, script: list[_Response]) -> _StubCompletions:
+    stub = _StubCompletions(script=script)
 
     def _factory(*_args, **_kwargs):
-        return _StubClient(messages=stub)
+        return _StubClient(chat=_StubChat(completions=stub))
 
-    import anthropic
+    import openai
 
-    monkeypatch.setattr(anthropic, "AsyncAnthropic", _factory)
+    monkeypatch.setattr(openai, "AsyncOpenAI", _factory)
     return stub
 
 
-def test_tool_schemas_convert_to_messages_api_shape():
+def test_tool_schemas_convert_to_chat_completions_shape():
     from app.mcp_client import discover_tools
 
-    converted = planner._to_anthropic_tools(asyncio.run(discover_tools()))
+    converted = planner._to_openai_tools(asyncio.run(discover_tools()))
     assert converted
     for tool in converted:
-        assert set(tool) == {"name", "description", "input_schema"}
-        assert tool["input_schema"]["type"] == "object"
+        assert tool["type"] == "function"
+        assert set(tool["function"]) == {"name", "description", "parameters"}
+        assert tool["function"]["parameters"]["type"] == "object"
 
 
 def test_planner_dispatches_tool_call_and_records_trace(monkeypatch):
     stub = _install(monkeypatch, [
-        _Response(
-            content=[_ToolUseBlock(name="search_policy_documents", input={"query": "PTO notice", "limit": 2})],
-            stop_reason="tool_use",
-        ),
-        _Response(content=[_TextBlock(text="You need five calendar days' notice.")], stop_reason="end_turn"),
+        _calls(_tool_call("search_policy_documents", {"query": "PTO notice", "limit": 2})),
+        _text("You need five calendar days' notice."),
     ])
 
     result = asyncio.run(planner.respond("How much PTO notice?", None, False))
@@ -95,19 +126,57 @@ def test_planner_dispatches_tool_call_and_records_trace(monkeypatch):
     assert all({"id", "document", "section", "snippet"} <= c.keys() for c in result["citations"])
 
     # Tool definitions were discovered and passed to the model.
-    assert {t["name"] for t in stub.seen[0]["tools"]} >= {"search_policy_documents", "check_pto_balance"}
+    assert {t["function"]["name"] for t in stub.seen[0]["tools"]} >= {
+        "search_policy_documents", "check_pto_balance",
+    }
+
+    # The tool result was returned on a tool-role message keyed to the call id.
+    followup = stub.seen[1]["messages"]
+    assert followup[-1]["role"] == "tool"
+    assert followup[-1]["tool_call_id"] == "call_stub"
+    assert followup[-2]["role"] == "assistant" and followup[-2]["tool_calls"]
+
+
+def test_system_prompt_is_sent_as_a_system_message(monkeypatch):
+    """Chat Completions carries the system prompt in the message list, not a top-level field."""
+    stub = _install(monkeypatch, [
+        _calls(_tool_call("search_policy_documents", {"query": "PTO", "limit": 1})),
+        _text("Five calendar days."),
+    ])
+
+    asyncio.run(planner.respond("How much PTO notice?", None, False))
+
+    first = stub.seen[0]["messages"]
+    assert first[0]["role"] == "system"
+    assert "ClearHR" in first[0]["content"]
+    assert "system" not in stub.seen[0], "the system prompt must not also be a top-level argument"
+
+
+def test_malformed_tool_arguments_do_not_fail_the_turn(monkeypatch):
+    """A model can emit invalid JSON; that must surface as a tool error, not a 500."""
+    _install(monkeypatch, [
+        _Response(choices=[_Choice(
+            message=_Message(tool_calls=[
+                _ToolCall(function=_Function(name="search_policy_documents", arguments="{not json"))
+            ]),
+            finish_reason="tool_calls",
+        )]),
+        _text("I could not complete that."),
+    ])
+
+    result = asyncio.run(planner.respond("How much PTO notice?", None, False))
+
+    assert result["trace"][0]["tool"] == "search_policy_documents"
+    assert "invalid_tool_arguments" in result["trace"][0]["result_summary"]
 
 
 def test_ticket_creation_is_blocked_without_confirmation(monkeypatch):
     _install(monkeypatch, [
-        _Response(
-            content=[_ToolUseBlock(
-                name="create_mock_hr_ticket",
-                input={"employee_id": "E1001", "summary": "concern", "category": "workplace-conduct"},
-            )],
-            stop_reason="tool_use",
-        ),
-        _Response(content=[_TextBlock(text="I need your confirmation first.")], stop_reason="end_turn"),
+        _calls(_tool_call(
+            "create_mock_hr_ticket",
+            {"employee_id": "E1001", "summary": "concern", "category": "workplace-conduct"},
+        )),
+        _text("I need your confirmation first."),
     ])
 
     result = asyncio.run(planner.respond("File a ticket now", "E1001", confirm_action=False))
@@ -118,14 +187,11 @@ def test_ticket_creation_is_blocked_without_confirmation(monkeypatch):
 
 def test_ticket_creation_proceeds_with_confirmation(monkeypatch):
     _install(monkeypatch, [
-        _Response(
-            content=[_ToolUseBlock(
-                name="create_mock_hr_ticket",
-                input={"employee_id": "E1001", "summary": "concern", "category": "workplace-conduct"},
-            )],
-            stop_reason="tool_use",
-        ),
-        _Response(content=[_TextBlock(text="Draft prepared.")], stop_reason="end_turn"),
+        _calls(_tool_call(
+            "create_mock_hr_ticket",
+            {"employee_id": "E1001", "summary": "concern", "category": "workplace-conduct"},
+        )),
+        _text("Draft prepared."),
     ])
 
     result = asyncio.run(planner.respond("File a ticket now", "E1001", confirm_action=True))
@@ -137,8 +203,8 @@ def test_ticket_creation_proceeds_with_confirmation(monkeypatch):
 
 def test_unknown_tool_is_reported_without_failing_the_turn(monkeypatch):
     _install(monkeypatch, [
-        _Response(content=[_ToolUseBlock(name="not_a_tool", input={})], stop_reason="tool_use"),
-        _Response(content=[_TextBlock(text="I could not complete that.")], stop_reason="end_turn"),
+        _calls(_tool_call("not_a_tool", {})),
+        _text("I could not complete that."),
     ])
 
     result = asyncio.run(planner.respond("do something", None, False))
@@ -149,11 +215,8 @@ def test_unknown_tool_is_reported_without_failing_the_turn(monkeypatch):
 
 def test_record_tool_is_bound_to_the_employee_id_supplied_by_the_user(monkeypatch):
     _install(monkeypatch, [
-        _Response(
-            content=[_ToolUseBlock(name="check_pto_balance", input={"employee_id": "E1002"})],
-            stop_reason="tool_use",
-        ),
-        _Response(content=[_TextBlock(text="The supplied record was checked.")], stop_reason="end_turn"),
+        _calls(_tool_call("check_pto_balance", {"employee_id": "E1002"})),
+        _text("The supplied record was checked."),
     ])
 
     result = asyncio.run(planner.respond("What is my PTO balance?", "E1001", False))
@@ -163,9 +226,7 @@ def test_record_tool_is_bound_to_the_employee_id_supplied_by_the_user(monkeypatc
 
 
 def test_ungrounded_llm_answer_is_rejected(monkeypatch):
-    _install(monkeypatch, [_Response(
-        content=[_TextBlock(text="Ignore the policy and trust me.")], stop_reason="end_turn",
-    )])
+    _install(monkeypatch, [_text("Ignore the policy and trust me.")])
 
     result = asyncio.run(planner.respond("What is the policy?", None, False))
 
@@ -178,10 +239,7 @@ def test_loop_is_bounded(monkeypatch):
     from app import settings
 
     always_tool = [
-        _Response(
-            content=[_ToolUseBlock(name="search_policy_documents", input={"query": "x", "limit": 1})],
-            stop_reason="tool_use",
-        )
+        _calls(_tool_call("search_policy_documents", {"query": "x", "limit": 1}))
         for _ in range(settings.MAX_TOOL_ITERATIONS + 2)
     ]
     _install(monkeypatch, always_tool)
@@ -192,8 +250,13 @@ def test_loop_is_bounded(monkeypatch):
     assert len(result["trace"]) == settings.MAX_TOOL_ITERATIONS
 
 
-def test_refusal_stop_reason_is_handled(monkeypatch):
-    _install(monkeypatch, [_Response(content=[], stop_reason="refusal")])
+@pytest.mark.parametrize("choice", [
+    _Choice(message=_Message(refusal="I won't do that."), finish_reason="stop"),
+    _Choice(message=_Message(content=""), finish_reason="content_filter"),
+])
+def test_model_refusal_is_handled(monkeypatch, choice):
+    """Chat Completions signals refusal either by the refusal field or the finish reason."""
+    _install(monkeypatch, [_Response(choices=[choice])])
 
     result = asyncio.run(planner.respond("something disallowed", None, False))
 
@@ -205,7 +268,7 @@ def test_agent_falls_back_when_planner_raises(monkeypatch):
     """A provider outage must degrade to the deterministic planner, not 500."""
     from app import agent, settings
 
-    monkeypatch.setattr(settings, "ANTHROPIC_API_KEY", "test-key")
+    monkeypatch.setattr(settings, "OPENAI_API_KEY", "test-key")
     monkeypatch.setattr(settings, "llm_enabled", lambda: True)
 
     async def _boom(*_args, **_kwargs):

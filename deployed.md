@@ -8,7 +8,7 @@
 Host: Railway. Verified on 2026-07-28: `/health` returned HTTP 200 in 274 ms
 with `status: ok`, `mcp_connected: true`, and `mcp_tool_count: 6`.
 
-The service currently runs the deterministic planner; `ANTHROPIC_API_KEY` is not
+The service currently runs the deterministic planner; `OPENAI_API_KEY` is not
 yet set in the host variables, so `/chat` reports `planner: "deterministic"`.
 Re-verify and update this note once the key is added.
 
@@ -20,4 +20,4 @@ Follow [DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md) for step-by-step Render and Ra
 
 ## Free-tier notes
 
-The first request after inactivity may be slower because the host wakes the service and builds/loads the local policy index. Record one cold-start observation here and the 29-case warm HTTP evaluation in `evaluation/results.md` after deployment. Do not enter `ANTHROPIC_API_KEY` or any other secret in this file.
+The first request after inactivity may be slower because the host wakes the service and builds/loads the local policy index. Record one cold-start observation here and the 29-case warm HTTP evaluation in `evaluation/results.md` after deployment. Do not enter `OPENAI_API_KEY` or any other secret in this file.

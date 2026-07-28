@@ -5,7 +5,7 @@ mcp==1.12.4
 pydantic==2.13.4
 # LLM planner. The app degrades to deterministic routing when no key is set,
 # so this is required for the graded agentic behaviour but not to boot.
-anthropic==0.75.0
+openai==1.109.1
 pytest==8.4.2
 httpx==0.28.1
 ruff==0.14.4

@@ -83,7 +83,7 @@ flowchart TB
         corpus[("data/policies/<br/>11 .md · 2 .html · 1 .txt")]
     end
 
-    llm["Claude API<br/>model from ANTHROPIC_MODEL<br/>key from env var"]
+    llm["OpenAI API<br/>model from OPENAI_MODEL<br/>key from env var"]
 
     browser -->|"HTTP · JSON"| server
     server -->|"Python await"| orch
@@ -118,7 +118,7 @@ RENDER / RAILWAY — one free-tier web service
   │     │ Python await
   │     ▼
   ├─ AGENT ORCHESTRATOR — app/agent.py
-  │     LLM tool loop when ANTHROPIC_API_KEY is set
+  │     LLM tool loop when OPENAI_API_KEY is set
   │     deterministic fallback otherwise
   │     │ call(name, args)
   │     ▼
@@ -155,7 +155,7 @@ BUILD PATH
 | Browser | FastAPI | HTTP / JSON | `fetch()` |
 | uvicorn | FastAPI | ASGI | `uvicorn app.main:app` |
 | FastAPI | Orchestrator | Python `await` | `agent.respond()` |
-| Orchestrator | Claude API | HTTPS REST | `anthropic` SDK → `/v1/messages` |
+| Orchestrator | OpenAI API | HTTPS REST | `openai` SDK → `/v1/chat/completions` |
 | Orchestrator | MCP client | Python call | `mcp_client.call(name, args)` |
 | MCP client | MCP server | **MCP stdio / JSON-RPC** | `mcp` SDK launches `python -m app.mcp_server` locally |
 | MCP tools | RAG / records | Python call | `rag.search()`, `data.employee()` |
@@ -174,7 +174,7 @@ Two properties are worth stating explicitly because the diagram makes them visib
 | --- | --- | --- |
 | Web framework | FastAPI | Flask (sync, weaker streaming); Streamlit (no clean `/chat` + `/health`) |
 | Chat UI | Static HTML + `fetch` | HTMX + SSE for token streaming; React/Next.js (needs a second service) |
-| LLM provider | Claude API (`ANTHROPIC_MODEL`, default Sonnet 4 identifier) | Groq and OpenRouter free tiers; Ollama for local development only |
+| LLM provider | OpenAI API (`OPENAI_MODEL`, default `gpt-4o-mini`) | Claude API; Groq and OpenRouter free tiers; Ollama for local development only |
 | Orchestration | Manual tool-use loop | SDK tool runner — capable, but a beta dependency, and the explicit loop is what this project has to explain; LangGraph / CrewAI hide the orchestration entirely |
 | MCP server | FastMCP, local stdio subprocess in one deployed service | Separate HTTP service — rubric-preferred, but costs a second free-tier service |
 | Retrieval representation | Sparse IDF-weighted hashed vectors | sentence-transformers MiniLM-L6-v2 (better semantics, ~90 MB download); fastembed; hosted free-tier embedding APIs |
@@ -183,7 +183,7 @@ Two properties are worth stating explicitly because the diagram makes them visib
 | CI | GitHub Actions | Required by the project brief |
 | Evaluation | pytest + a scoring harness | RAGAS and DeepEval — richer metrics, but add an LLM judge and dependency weight |
 
-The current representation is lexical rather than a pretrained semantic embedding model. Anthropic exposes no embeddings endpoint, so a future semantic embedding block would use a separate local model or provider; that remaining rubric risk is explicitly tracked in `OPEN_ITEMS.md` rather than being presented as complete.
+The current representation is lexical rather than a pretrained semantic embedding model. The provider now in use does expose an embeddings endpoint (`/v1/embeddings`), so a semantic block could call it directly or use a local model; either way it remains unimplemented, and that rubric risk is tracked in `OPEN_ITEMS.md` rather than presented as complete.
 
 ## Corpus and ingestion
 
@@ -233,7 +233,7 @@ Six tools: two read the RAG index, four read or draft against synthetic records.
 
 Two planners sit behind one entry point in `app/agent.py`.
 
-**LLM planner** (`app/planner.py`, used when `ANTHROPIC_API_KEY` is set). A bounded tool-use loop: tool schemas are discovered from the MCP server at request time and mapped onto the Messages API `tools` shape, the model returns `tool_use` blocks, each is dispatched through `mcp_client.call`, and results are appended as `tool_result` until the model stops requesting tools or `MAX_TOOL_ITERATIONS` is reached. Nothing about tool selection is hard-coded — adding a tool to `mcp_server.py` makes it available to the model with no planner change. Code validates the requested tool against discovered schemas, binds every record-tool `employee_id` to the request's synthetic ID, and rejects an LLM answer that has neither valid policy citations nor a successful synthetic-record result.
+**LLM planner** (`app/planner.py`, used when `OPENAI_API_KEY` is set). A bounded tool-use loop: tool schemas are discovered from the MCP server at request time and mapped onto the Chat Completions `tools` shape, the model returns `tool_calls`, each is dispatched through `mcp_client.call`, and each result is appended as a `role: "tool"` message keyed to its `tool_call_id` until the model stops requesting tools or `MAX_TOOL_ITERATIONS` is reached. Nothing about tool selection is hard-coded — adding a tool to `mcp_server.py` makes it available to the model with no planner change. Code validates the requested tool against discovered schemas, binds every record-tool `employee_id` to the request's synthetic ID, and rejects an LLM answer that has neither valid policy citations nor a successful synthetic-record result.
 
 **Deterministic planner** (fallback, used when no key is configured). Rule-based routing over the same MCP tools, covering the same workflows. It exists so the application runs and CI passes with no credentials, and so a provider outage degrades rather than fails.
 
@@ -303,7 +303,7 @@ The set is 29 cases in `evaluation/evaluation_set.json`, each carrying a gold an
 
 Groundedness is reported as an **automatic proxy**: it checks every required document, citation shape, and (in local mode) that citation IDs resolve to the local index. It does not check that the wording is faithful to that chunk, which needs human review. The harness labels it as a proxy rather than presenting it as the real measurement.
 
-**Current status.** Results in `evaluation/results.md` were measured with no API key, using the deterministic router plus the deterministic safety gate where applicable; the report therefore labels its planner as `mixed`. The LLM planner's loop mechanics are covered by `tests/test_planner.py` against a stub client, but its answer quality has not been measured. Re-run the harness with `ANTHROPIC_API_KEY` set before submission and replace the file; the planner used is recorded in the report header so the runs cannot be confused.
+**Current status.** Results in `evaluation/results.md` were measured with no API key, using the deterministic router plus the deterministic safety gate where applicable; the report therefore labels its planner as `mixed`. The LLM planner's loop mechanics are covered by `tests/test_planner.py` against a stub client, but its answer quality has not been measured. Re-run the harness with `OPENAI_API_KEY` set before submission and replace the file; the planner used is recorded in the report header so the runs cannot be confused.
 
 ## Demo walkthrough checklist
 

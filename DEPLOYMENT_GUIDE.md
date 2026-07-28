@@ -2,7 +2,7 @@
 
 Choose **one** platform for the final project. Both options deploy the same single FastAPI service and use the configuration already in this repository.
 
-Before starting, push this project to GitHub. Do not commit `.env` files or API keys. The app can run in deterministic fallback mode with no secret, but the graded LLM demo requires `ANTHROPIC_API_KEY` as a host-only environment variable. In LLM mode, use only the repository's synthetic data because the prompt and relevant tool results are sent to Anthropic.
+Before starting, push this project to GitHub. Do not commit `.env` files or API keys. The app can run in deterministic fallback mode with no secret, but the graded LLM demo requires `OPENAI_API_KEY` as a host-only environment variable. In LLM mode, use only the repository's synthetic data because the prompt and relevant tool results are sent to OpenAI.
 
 The committed configuration was checked against the current official [Render
 Blueprint reference](https://render.com/docs/blueprint-spec) and [Railway
@@ -31,7 +31,7 @@ and commands below rather than relying on an old screenshot.
    build reruns the tests.
 
 6. Click **Apply** / **Create Blueprint** and watch the deployment log. The build must finish with passing tests before Render starts the web service.
-7. In the service's **Environment** settings, add `ANTHROPIC_API_KEY` (and `ANTHROPIC_MODEL` only if needed for the account). Do not put either in `render.yaml`, a commit, or a screenshot. The default 60-second demo guard is 30 requests per client and 60 total; adjust its `CHAT_RATE_*` variables only if you understand the cost/privacy trade-off.
+7. In the service's **Environment** settings, add `OPENAI_API_KEY` (and `OPENAI_MODEL` only if needed for the account). Do not put either in `render.yaml`, a commit, or a screenshot. The default 60-second demo guard is 30 requests per client and 60 total; adjust its `CHAT_RATE_*` variables only if you understand the cost/privacy trade-off.
 8. When the service is live, copy its public `https://...onrender.com` URL. Open `<service-url>/health`; it must return HTTP 200 with JSON `"status": "ok"` and `"mcp_connected": true`. An HTTP 503 means the local MCP child is unavailable and must be fixed before recording the demo.
 9. Open the root URL and submit the PTO demo request: “Can I take three days of PTO next week?” with employee ID `E1001`. Confirm the response reports `planner: "llm"` before treating it as a live-LLM demo.
 10. Paste the public app and health URLs into [deployed.md](deployed.md). Note the time of the first request after inactivity as the cold-start observation.
@@ -52,7 +52,7 @@ If Render does not detect the Blueprint, create **New** → **Web Service** and 
    | Health check path | `/health` |
    | Health check timeout | 60 seconds |
 
-4. In the service's **Variables** settings, add `ANTHROPIC_API_KEY` (and `ANTHROPIC_MODEL` only if needed for the account). Do not put either in `railway.toml`, a commit, or a screenshot. The default 60-second demo guard is 30 requests per client and 60 total; adjust its `CHAT_RATE_*` variables only if you understand the cost/privacy trade-off.
+4. In the service's **Variables** settings, add `OPENAI_API_KEY` (and `OPENAI_MODEL` only if needed for the account). Do not put either in `railway.toml`, a commit, or a screenshot. The default 60-second demo guard is 30 requests per client and 60 total; adjust its `CHAT_RATE_*` variables only if you understand the cost/privacy trade-off.
 5. Start the deployment and watch the logs. Do not change `PORT`; Railway supplies it automatically.
 6. After a successful deployment, open the service’s **Settings** → **Networking** and choose **Generate Domain**.
 7. Open `<railway-domain>/health`. It must return HTTP 200 with `"status": "ok"` and `"mcp_connected": true`; HTTP 503 means the MCP child is not usable yet.

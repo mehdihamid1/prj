@@ -64,13 +64,15 @@ served live at `GET /tools`.
 
 1. `app/mcp_client.discover_tools()` calls `list_tools()` and returns each tool's
    name, description, and JSON Schema.
-2. `app/planner._to_anthropic_tools()` maps those schemas onto the Messages API
+2. `app/planner._to_openai_tools()` maps those schemas onto the Chat Completions
    `tools` shape. Nothing is hard-coded — a tool added to `mcp_server.py` becomes
    available to the model with no change to the planner.
-3. The model returns a `tool_use` block. The planner passes the name and
-   arguments to `app/mcp_client.call()`, which invokes `call_tool()`.
-4. The result is appended as a `tool_result` and the loop continues until the
-   model stops requesting tools or the iteration bound is reached.
+3. The model returns a `tool_calls` entry. The planner decodes its JSON argument
+   string and passes the name and arguments to `app/mcp_client.call()`, which
+   invokes `call_tool()`.
+4. The result is appended as a `role: "tool"` message keyed to the originating
+   `tool_call_id`, and the loop continues until the model stops requesting tools
+   or the iteration bound is reached.
 
 The orchestrator never imports `app.rag` or `app.data`. Its only route to policy
 text or employee records is `call(name, arguments)`.

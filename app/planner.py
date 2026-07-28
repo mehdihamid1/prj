@@ -61,16 +61,40 @@ TRACE_PREVIEW_ITEMS = 4
 TRACE_PREVIEW_CHARS = 240
 
 
-def _to_anthropic_tools(discovered: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Map discovered MCP schemas onto the Messages API tool shape."""
+def _to_openai_tools(discovered: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Map discovered MCP schemas onto the Chat Completions tool shape.
+
+    Nothing here is hard-coded: a tool added to the MCP server becomes available
+    to the model with no change to this module.
+    """
     return [
         {
-            "name": tool["name"],
-            "description": tool.get("description") or "",
-            "input_schema": tool["inputSchema"],
+            "type": "function",
+            "function": {
+                "name": tool["name"],
+                "description": tool.get("description") or "",
+                "parameters": tool["inputSchema"],
+            },
         }
         for tool in discovered
     ]
+
+
+def _decode_arguments(raw: Any) -> tuple[dict[str, Any], dict[str, Any] | None]:
+    """Chat Completions returns tool arguments as a JSON string, not an object.
+
+    A model can emit malformed JSON, so this fails into a tool-level error the
+    loop can report rather than raising out of the request.
+    """
+    if isinstance(raw, dict):
+        return raw, None
+    try:
+        decoded = json.loads(raw or "{}")
+    except (TypeError, ValueError):
+        return {}, {"error": "invalid_tool_arguments", "detail": "Arguments were not valid JSON."}
+    if not isinstance(decoded, dict):
+        return {}, {"error": "invalid_tool_arguments", "detail": "Arguments were not a JSON object."}
+    return decoded, None
 
 
 def _blocked_ticket_result() -> dict[str, Any]:
@@ -174,20 +198,21 @@ async def respond(
     confirm_action: bool = False,
 ) -> dict[str, Any]:
     """Run the planner loop and return the answer with citations and a trace."""
-    from anthropic import AsyncAnthropic  # imported lazily so the app runs without the SDK
+    from openai import AsyncOpenAI  # imported lazily so the app runs without the SDK
 
-    client = AsyncAnthropic(
-        api_key=settings.anthropic_api_key() or None,
+    client = AsyncOpenAI(
+        api_key=settings.openai_api_key() or None,
         timeout=settings.LLM_TIMEOUT_SECONDS,
         max_retries=settings.LLM_MAX_RETRIES,
     )
-    tools = _to_anthropic_tools(await discover_tools())
-    allowed_tools = {tool["name"] for tool in tools}
+    tools = _to_openai_tools(await discover_tools())
+    allowed_tools = {tool["function"]["name"] for tool in tools}
 
     context = f"Employee ID supplied by the user: {employee_id}" if employee_id else \
         "No employee ID was supplied. Ask for one if the question depends on personal records."
     messages: list[dict[str, Any]] = [
-        {"role": "user", "content": f"{context}\n\nQuestion: {message}"}
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": f"{context}\n\nQuestion: {message}"},
     ]
 
     trace: list[dict[str, Any]] = []
@@ -196,23 +221,28 @@ async def respond(
     record_evidence = False
 
     for _ in range(settings.MAX_TOOL_ITERATIONS):
-        response = await client.messages.create(
-            model=settings.ANTHROPIC_MODEL,
+        response = await client.chat.completions.create(
+            model=settings.OPENAI_MODEL,
             # HR answers are short. A small bound controls demo cost and latency.
-            max_tokens=2048,
-            system=SYSTEM_PROMPT,
+            max_completion_tokens=2048,
             tools=tools,
             messages=messages,
         )
 
-        if response.stop_reason == "refusal":
+        choice = response.choices[0]
+        reply = choice.message
+
+        # A model-side refusal arrives either as a populated `refusal` field or as
+        # a content_filter finish reason, depending on the model and the cause.
+        if getattr(reply, "refusal", None) or choice.finish_reason == "content_filter":
             return {
                 "answer": "I can't help with that request. Please contact HR directly.",
                 "citations": [], "trace": trace, "planner": "llm", "refused": True,
             }
 
-        if response.stop_reason != "tool_use":
-            answer = "".join(block.text for block in response.content if block.type == "text")
+        tool_calls = list(getattr(reply, "tool_calls", None) or [])
+        if not tool_calls:
+            answer = reply.content or ""
             if not citations and not record_evidence:
                 return _evidence_required_result(trace, citations)
             return {
@@ -224,49 +254,64 @@ async def respond(
                 else "No tool evidence retrieved",
             }
 
-        messages.append({"role": "assistant", "content": response.content})
+        # Echo the assistant turn back verbatim: Chat Completions rejects a tool
+        # result whose tool_call_id was not announced in the preceding message.
+        messages.append({
+            "role": "assistant",
+            "content": reply.content,
+            "tool_calls": [
+                {
+                    "id": tool_call.id,
+                    "type": "function",
+                    "function": {
+                        "name": tool_call.function.name,
+                        "arguments": tool_call.function.arguments,
+                    },
+                }
+                for tool_call in tool_calls
+            ],
+        })
 
-        results = []
-        for block in response.content:
-            if block.type != "tool_use":
-                continue
+        for tool_call in tool_calls:
+            name = tool_call.function.name
+            requested, malformed = _decode_arguments(tool_call.function.arguments)
 
-            arguments, blocked = _prepare_tool_call(
-                block.name, dict(block.input), employee_id, confirm_action, allowed_tools
-            )
-            if blocked is not None:
-                output: Any = blocked
+            if malformed is not None:
+                arguments, output = requested, malformed
             else:
-                try:
-                    output = await call(block.name, arguments)
-                except Exception as exc:  # a failed tool must not fail the turn
-                    output = {"error": "tool_unavailable", "detail": type(exc).__name__}
+                arguments, blocked = _prepare_tool_call(
+                    name, requested, employee_id, confirm_action, allowed_tools
+                )
+                if blocked is not None:
+                    output: Any = blocked
+                else:
+                    try:
+                        output = await call(name, arguments)
+                    except Exception as exc:  # a failed tool must not fail the turn
+                        output = {"error": "tool_unavailable", "detail": type(exc).__name__}
 
-            tools_used.append(block.name)
-            trace.append(_trace_step(block.name, arguments, output))
+            tools_used.append(name)
+            trace.append(_trace_step(name, arguments, output))
 
             if (
-                block.name in RECORD_TOOLS
+                name in RECORD_TOOLS
                 and isinstance(output, dict)
                 and "error" not in output
                 and not output.get("is_error")
             ):
                 record_evidence = True
 
-            if block.name in {"search_policy_documents", "get_policy_section"} and isinstance(output, list):
+            if name in POLICY_TOOLS and isinstance(output, list):
                 citations.extend(
                     citation for item in output if isinstance(item, dict)
                     if (citation := _citation(item)) is not None
                 )
 
-            results.append({
-                "type": "tool_result",
-                "tool_use_id": block.id,
+            messages.append({
+                "role": "tool",
+                "tool_call_id": tool_call.id,
                 "content": json.dumps(output, ensure_ascii=False, default=str),
-                "is_error": isinstance(output, dict) and "error" in output,
             })
-
-        messages.append({"role": "user", "content": results})
 
     return {
         "answer": (

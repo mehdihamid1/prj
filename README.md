@@ -11,7 +11,7 @@ Every policy and every employee record in this repository is fictional.
 ```text
 Browser /chat UI → FastAPI → agent orchestrator → MCP client
                                    │                  │
-                              Claude API        ══ MCP boundary ══
+                              OpenAI API        ══ MCP boundary ══
                             (tool selection)           │
                                               ClearHR MCP server
                                                 ↙            ↘
@@ -26,7 +26,7 @@ The orchestrator never reads the policy index or the employee records directly. 
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-cp .env.example .env          # optional; add ANTHROPIC_API_KEY to enable the LLM planner
+cp .env.example .env          # optional; add OPENAI_API_KEY to enable the LLM planner
 uvicorn app.main:app --reload
 ```
 
@@ -38,7 +38,7 @@ Open `http://127.0.0.1:8000` and try `E1001` with *"Can I take three days of PTO
 | `GET /health` | App status and MCP connectivity |
 | `GET /tools` | Live MCP tool schemas as discovered by the agent |
 
-**Without an API key the app still runs.** It falls back to a deterministic rule-based planner over the same MCP tools, so every endpoint works and the test suite passes with no credentials. With `ANTHROPIC_API_KEY` set, an LLM chooses the tools instead. In that mode, the user prompt and the tool schemas/results needed for the turn are sent to Anthropic; use this only with the repository's synthetic coursework data. Before recording the demo, use a real key and a model identifier accepted by your Anthropic account, then rerun the evaluation.
+**Without an API key the app still runs.** It falls back to a deterministic rule-based planner over the same MCP tools, so every endpoint works and the test suite passes with no credentials. With `OPENAI_API_KEY` set, an LLM chooses the tools instead. In that mode, the user prompt and the tool schemas/results needed for the turn are sent to OpenAI; use this only with the repository's synthetic coursework data. Before recording the demo, use a real key and a model identifier accepted by your OpenAI account, then rerun the evaluation.
 
 ## Corpus
 
@@ -82,7 +82,7 @@ Configured for either platform as a **single web service**, with no database and
 - **Render** — *New → Blueprint*, select this repository. [render.yaml](render.yaml) declares the runtime, build and start commands, free plan, and `/health` check.
 - **Railway** — create a project from the repository. [railway.toml](railway.toml) configures Railpack, the same build command, and the health check. Generate a public domain after the first successful deploy.
 
-Deployment is gated by the host build command, which runs `python -m pytest -q` — a failing test fails the build, and a failed build never replaces the running service. On Render, [render.yaml](render.yaml) additionally uses `autoDeployTrigger: checksPass`, so automatic deploys wait for GitHub checks; Railway uses the tested host build as its in-host gate. Set `ANTHROPIC_API_KEY` and, if needed, `ANTHROPIC_MODEL` in the host's environment-variable settings only; never commit them. The running app launches and calls its MCP server over stdio, even in the single-service deployment. `/health` returns HTTP 503 if that MCP connection is unavailable, so a broken tool service cannot appear healthy. Free-tier cold starts add latency because the service builds the policy index on first start.
+Deployment is gated by the host build command, which runs `python -m pytest -q` — a failing test fails the build, and a failed build never replaces the running service. On Render, [render.yaml](render.yaml) additionally uses `autoDeployTrigger: checksPass`, so automatic deploys wait for GitHub checks; Railway uses the tested host build as its in-host gate. Set `OPENAI_API_KEY` and, if needed, `OPENAI_MODEL` in the host's environment-variable settings only; never commit them. The running app launches and calls its MCP server over stdio, even in the single-service deployment. `/health` returns HTTP 503 if that MCP connection is unavailable, so a broken tool service cannot appear healthy. Free-tier cold starts add latency because the service builds the policy index on first start.
 
 `/chat` also has a small process-local cost guard by default (30 requests per client and 60 total per 60 seconds). It is suitable for a one-instance coursework demo, not a replacement for authentication, an edge rate limiter, or a production privacy review.
 
@@ -103,7 +103,7 @@ python -m evaluation.run_eval --base-url https://your-service.example
 ## Submission checklist
 
 - [ ] Deploy and fill in [deployed.md](deployed.md) with the live URL and `/health` URL
-- [ ] Re-run the evaluation with `ANTHROPIC_API_KEY` set and commit [evaluation/results.md](evaluation/results.md)
+- [ ] Re-run the evaluation with `OPENAI_API_KEY` set and commit [evaluation/results.md](evaluation/results.md)
 - [ ] Share the repository with the `quantic-grader` GitHub account
 - [ ] Record the 7–10 minute demo: two agentic tasks end to end, narrating tool names, arguments, outputs, citations, and the final answer, then a walkthrough of design, deployment, CI/CD, and evaluation
 

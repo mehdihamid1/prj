@@ -23,10 +23,11 @@ MIN_SUPPORT = float(os.getenv("MIN_SUPPORT", "0.34"))
 
 # LLM planner. Absent an API key the agent falls back to deterministic routing,
 # which keeps CI hermetic and the app runnable with no credentials at all.
-ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
-# A documented Claude tool-use model. Override this in the host environment when
-# your Anthropic account uses a newer supported model identifier.
-ANTHROPIC_MODEL = os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-20250514")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
+# An OpenAI model that supports function/tool calling. Override this in the host
+# environment to use a different one; the planner discovers its tools from MCP
+# and does not depend on any model-specific behaviour.
+OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 MAX_TOOL_ITERATIONS = int(os.getenv("MAX_TOOL_ITERATIONS", "6"))
 # Bound external/provider and local-tool waits so one stalled dependency cannot
 # hold an HTTP request forever on a small free-tier service.
@@ -36,11 +37,11 @@ MCP_OPERATION_TIMEOUT_SECONDS = float(os.getenv("MCP_OPERATION_TIMEOUT_SECONDS",
 MCP_SHUTDOWN_TIMEOUT_SECONDS = float(os.getenv("MCP_SHUTDOWN_TIMEOUT_SECONDS", "10"))
 
 
-def anthropic_api_key() -> str:
+def openai_api_key() -> str:
     """Read the current host key while retaining a test-friendly module default."""
-    return os.getenv("ANTHROPIC_API_KEY", ANTHROPIC_API_KEY)
+    return os.getenv("OPENAI_API_KEY", OPENAI_API_KEY)
 
 
 def llm_enabled() -> bool:
     """True when a key is configured, so the planner path can be used."""
-    return bool(anthropic_api_key())
+    return bool(openai_api_key())

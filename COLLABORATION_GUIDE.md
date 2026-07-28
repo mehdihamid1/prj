@@ -36,29 +36,29 @@ python -m pytest -q
 uvicorn app.main:app --reload
 ```
 
-Leave `ANTHROPIC_API_KEY` blank to use the safe, deterministic fallback. It is
+Leave `OPENAI_API_KEY` blank to use the safe, deterministic fallback. It is
 enough for development, testing, and the local MCP demo. A teammate who needs to
 test the real LLM planner must put **their own** key in their own untracked
 `.env` file; they must never paste it into source code, chat, an issue, a pull
 request, or a screenshot.
 
 When the LLM planner is enabled, the request text and the tool schemas/results
-needed for that turn are transmitted to Anthropic. This is acceptable only for
+needed for that turn are transmitted to OpenAI. This is acceptable only for
 the synthetic coursework corpus in this repository. Do not enter, paste, or
 screen-share real employee information, complaints, health information, payroll
 data, credentials, or internal company policy in this demo.
 
 ## Access and deployment rules
 
-- Do not share GitHub, Anthropic, Render, or Railway usernames, passwords,
+- Do not share GitHub, OpenAI, Render, or Railway usernames, passwords,
   personal access tokens, or browser sessions.
-- Keep one trusted deployment owner. That person enters `ANTHROPIC_API_KEY` only
+- Keep one trusted deployment owner. That person enters `OPENAI_API_KEY` only
   in the chosen host's environment-variable settings and controls billing and
   the public deployment.
 - The public demo has a process-local 60-second request guard (defaults: 30 per
   client, 60 total). It limits accidental cost on one instance but is **not**
   authentication, a web-application firewall, or a production privacy control.
-  The deployment owner should set an Anthropic spend alert/limit, review host
+  The deployment owner should set an OpenAI spend alert/limit, review host
   logs for unexpected traffic, and take the demo down after grading if it is no
   longer needed.
 - Collaborators work on a feature branch and open a pull request. Do not push
@@ -126,15 +126,15 @@ today's uncommitted work or a future push:
 
 | Check | Result |
 | --- | --- |
-| Secret-shaped strings (`sk-ant-`, `ghp_`, `github_pat_`, `AKIA…`, `xox…`, private keys) in tracked files | None |
+| Secret-shaped strings (`sk-`, `sk-proj-`, `ghp_`, `github_pat_`, `AKIA…`, `xox…`, private keys) in tracked files | None |
 | Same patterns across all commits in history | None |
 | `.env` tracked, or present on disk | Neither; `.gitignore` covers it |
-| Values assigned in `.env.example` | Only non-secret defaults; `ANTHROPIC_API_KEY` is blank |
+| Values assigned in `.env.example` | Only non-secret defaults; `OPENAI_API_KEY` is blank |
 | Real personal data in `mock_data/` | None — three invented employees |
 | Commits in history | 1 |
 
 The only matches for "API key" anywhere in the repository are the source lines
-that *read* the `ANTHROPIC_API_KEY` environment variable name, and the
+that *read* the `OPENAI_API_KEY` environment variable name, and the
 documentation telling collaborators to supply their own.
 
 Treat the repository as shareable only after repeating the pre-share check above
