@@ -6,6 +6,9 @@ services:
     buildCommand: pip install -r requirements.txt && python -m pytest -q
     startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /health
+    # Render waits for the repository's GitHub checks before starting an
+    # automatic deploy; its own build command then reruns the test suite.
+    autoDeployTrigger: checksPass
     envVars:
       - key: PYTHONUNBUFFERED
         value: "1"

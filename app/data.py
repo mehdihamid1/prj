@@ -1,15 +1,16 @@
+"""Synthetic HR records. Every value here is fictional test data."""
 from __future__ import annotations
 
+import hashlib
 import json
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any
 
-from .settings import DATA_DIR
+from .settings import MOCK_DATA_DIR
 
 
 def _read(name: str) -> list[dict[str, Any]]:
-    return json.loads((DATA_DIR / name).read_text())
+    return json.loads((MOCK_DATA_DIR / name).read_text())
 
 
 def employee(employee_id: str) -> dict[str, Any] | None:
@@ -25,6 +26,22 @@ def benefits(employee_id: str) -> dict[str, Any] | None:
 
 
 def create_ticket(employee_id: str, summary: str, category: str) -> dict[str, Any]:
-    # Deliberately a mock action: no external system is modified.
-    return {"ticket_id": f"MOCK-{datetime.now(timezone.utc):%Y%m%d%H%M%S}", "employee_id": employee_id,
-            "category": category, "summary": summary, "status": "draft", "requires_confirmation": True}
+    """Create a confirmed mock HR draft. No external system is modified.
+
+    The reference is derived from the ticket's own content rather than the clock,
+    so that the same request always produces the same identifier and evaluation
+    runs stay reproducible.
+    """
+    safe_summary = " ".join(summary.split())[:300]
+    safe_category = " ".join(category.split()).lower()[:64] or "general-hr"
+    digest = hashlib.sha256(f"{employee_id}|{safe_category}|{safe_summary}".encode()).hexdigest()[:10].upper()
+    return {
+        "ticket_id": f"MOCK-{digest}",
+        "employee_id": employee_id,
+        "category": safe_category,
+        "summary": safe_summary,
+        "status": "draft",
+        "confirmation_obtained": True,
+        "mock_only": True,
+        "drafted_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+    }

@@ -1,37 +1,185 @@
-"""MCP client adapter used by the orchestrator.
+"""The agent's MCP client.
 
-For free-tier single-service deployment the adapter dispatches through FastMCP's
-registered tool manager in-process. This is still the MCP tool boundary: the
-agent discovers tool schemas and invokes names/arguments through FastMCP, rather
-than importing or calling the data functions. `app.mcp_server` can also be run
-as a separate stdio MCP process with `python -m app.mcp_server`.
+Every production tool call uses the MCP stdio transport. The app launches the
+same FastMCP server that `scripts/mcp_check.py` validates in CI, negotiates the
+MCP protocol, then calls a discovered tool by name. Keeping the server in the
+same deployed service is free-tier friendly; it does not bypass the protocol.
+
+Two deployment properties drive the shape of this module:
+
+**One server process, not one per request.** Spawning a fresh interpreter per
+call measured at roughly 590 ms and 51 MB. On a small container that means the
+health probe forks a Python process on every check and a handful of concurrent
+requests can exhaust memory. A single long-lived session keeps the protocol
+boundary intact and removes both problems.
+
+**The session is owned by a dedicated task.** `stdio_client` and `ClientSession`
+are anyio context managers whose cancel scopes must be exited in the task that
+entered them. Holding them open across an application lifetime therefore cannot
+be done with a shared `AsyncExitStack` touched from request handlers — closing
+from another task raises "Attempted to exit cancel scope in a different task".
+A supervisor task enters both managers, publishes the session, and waits for a
+stop signal, so entry and exit always happen on the same task.
 """
 from __future__ import annotations
 
+import asyncio
 import json
-from typing import Any
+import logging
+import sys
+from contextlib import asynccontextmanager, suppress
+from typing import Any, AsyncIterator
 
-from .mcp_server import mcp
+from mcp import ClientSession, StdioServerParameters
+from mcp.client.stdio import stdio_client
+
+from . import settings
+
+logger = logging.getLogger(__name__)
+
+# `cwd` is pinned to the repository root rather than inherited. `python -m` puts
+# the working directory on sys.path, so inheriting a different start directory on
+# a host would make `app.mcp_server` unimportable and the server fail to launch.
+_SERVER = StdioServerParameters(
+    command=sys.executable,
+    args=["-m", "app.mcp_server"],
+    cwd=str(settings.ROOT),
+)
+
+_task: asyncio.Task[None] | None = None
+_session: ClientSession | None = None
+_ready: asyncio.Event | None = None
+_stop: asyncio.Event | None = None
+_error: BaseException | None = None
+_lock = asyncio.Lock()
 
 
-async def discover_tools() -> list[dict[str, Any]]:
-    tools = await mcp.list_tools()
-    return [{"name": tool.name, "description": tool.description, "inputSchema": tool.inputSchema} for tool in tools]
+async def _supervise(ready: asyncio.Event, stop: asyncio.Event) -> None:
+    """Own the MCP session for its whole lifetime, on one task."""
+    global _session, _error
+    try:
+        async with stdio_client(_SERVER) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+                _session, _error = session, None
+                logger.info("MCP stdio session established")
+                ready.set()
+                await stop.wait()
+    except BaseException as exc:  # publish the failure instead of dying silently
+        _error = exc
+        raise
+    finally:
+        _session = None
+        ready.set()
 
 
-async def call(name: str, arguments: dict[str, Any]) -> Any:
-    content = await mcp.call_tool(name, arguments)
-    # MCP SDK v1.12 returns (content_blocks, structured_result) for tools with
-    # an output schema; prefer the structured value when it is available.
-    if isinstance(content, tuple):
-        blocks, structured = content
-        if isinstance(structured, dict):
-            return structured.get("result", structured)
-        content = blocks
-    if isinstance(content, dict):
-        return content
-    text = "".join(item.text for item in content if hasattr(item, "text"))
+async def _start() -> None:
+    global _task, _ready, _stop, _error
+    ready, stop = asyncio.Event(), asyncio.Event()
+    _ready, _stop, _error = ready, stop, None
+    _task = asyncio.create_task(_supervise(ready, stop), name="mcp-session")
+    await ready.wait()
+    if _session is None:
+        raise RuntimeError(f"MCP server failed to start: {_error!r}")
+
+
+async def _stop_task() -> None:
+    global _task, _session
+    if _task is None:
+        return
+    if _stop is not None:
+        _stop.set()
+    task = _task
+    try:
+        await asyncio.wait_for(asyncio.shield(task), timeout=settings.MCP_SHUTDOWN_TIMEOUT_SECONDS)
+    except (asyncio.TimeoutError, asyncio.CancelledError):
+        task.cancel()
+        # Give the supervisor task a chance to close its stdio child process.
+        # Suppressing cancellation here is intentional: shutdown must finish even
+        # when a broken server ignored the cooperative stop signal.
+        with suppress(asyncio.CancelledError):
+            await task
+    except BaseException as exc:  # teardown must not propagate
+        logger.warning("MCP session teardown failed: %s", exc)
+    _task, _session = None, None
+
+
+def _alive() -> bool:
+    return _session is not None and _task is not None and not _task.done()
+
+
+async def session() -> ClientSession:
+    """Return the shared session, starting or restarting the server if needed."""
+    if _alive():
+        return _session  # type: ignore[return-value]
+    async with _lock:
+        if not _alive():
+            await _stop_task()
+            await _start()
+        return _session  # type: ignore[return-value]
+
+
+async def startup() -> None:
+    """Open the session eagerly so a broken MCP server fails fast at boot."""
+    await session()
+
+
+async def shutdown() -> None:
+    """Terminate the MCP server subprocess with the application."""
+    async with _lock:
+        await _stop_task()
+
+
+@asynccontextmanager
+async def request_session() -> AsyncIterator[None]:
+    """Ensure a live MCP session for the duration of one agent request.
+
+    Retained as the call-site API. It no longer spawns a process — the shared
+    session already exists — but it keeps the guarantee that every tool call in
+    a single request travels over one initialised MCP connection.
+    """
+    await session()
+    yield
+
+
+async def _invoke(operation: str, *args: Any) -> Any:
+    """Run one session method, reconnecting once if the child process has died."""
+    active = await session()
+    try:
+        return await asyncio.wait_for(
+            getattr(active, operation)(*args), timeout=settings.MCP_OPERATION_TIMEOUT_SECONDS
+        )
+    except Exception as exc:
+        logger.warning("MCP %s failed (%s); reconnecting", operation, exc)
+        async with _lock:
+            await _stop_task()
+        active = await session()
+        return await asyncio.wait_for(
+            getattr(active, operation)(*args), timeout=settings.MCP_OPERATION_TIMEOUT_SECONDS
+        )
+
+
+def _payload(result: Any) -> Any:
+    """Read structured MCP output first, with text JSON as a compatibility fallback."""
+    structured = getattr(result, "structuredContent", None)
+    if structured:
+        return structured.get("result", structured)
+    text = "".join(block.text for block in result.content if hasattr(block, "text"))
     try:
         return json.loads(text)
     except json.JSONDecodeError:
-        return {"raw": text}
+        return {"raw": text, "is_error": bool(getattr(result, "isError", False))}
+
+
+async def discover_tools() -> list[dict[str, Any]]:
+    """Discover schemas from the running MCP server; schemas are never hard-coded."""
+    listed = await _invoke("list_tools")
+    return [
+        {"name": tool.name, "description": tool.description, "inputSchema": tool.inputSchema}
+        for tool in listed.tools
+    ]
+
+
+async def call(name: str, arguments: dict[str, Any]) -> Any:
+    """Call a named MCP tool over stdio and return its structured result."""
+    return _payload(await _invoke("call_tool", name, arguments))

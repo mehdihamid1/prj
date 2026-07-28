@@ -1,1 +1,196 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ClearHR</title><style>body{max-width:900px;margin:2rem auto;font:16px system-ui;background:#f6f8fb;color:#13233a}textarea,input,button{font:inherit;padding:.7rem;border-radius:7px;border:1px solid #bcc7d6}textarea{width:100%;box-sizing:border-box}button{background:#1268d6;color:white;border:0;cursor:pointer}main{background:white;padding:2rem;border-radius:12px;box-shadow:0 2px 14px #dce2ea}pre{white-space:pre-wrap;background:#f2f5f8;padding:1rem;border-radius:7px}.row{display:flex;gap:.5rem;margin:.7rem 0}</style></head><body><main><h1>ClearHR</h1><p>Grounded policy guidance using synthetic data only.</p><textarea id="message" rows="5">Can I take three days of PTO next week?</textarea><div class="row"><input id="employee" value="E1001" aria-label="Employee ID"><button onclick="ask()">Ask ClearHR</button></div><p>Try: PTO guidance (E1001), remote work from another country, or a benefits question.</p><pre id="response">Ready.</pre></main><script>async function ask(){let r=await fetch('/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:message.value,employee_id:employee.value||null})});response.textContent=JSON.stringify(await r.json(),null,2)}</script></body></html>
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ClearHR</title>
+  <style>
+    :root { color: #13233a; background: #f6f8fb; font-family: system-ui, sans-serif; }
+    body { max-width: 900px; margin: 2rem auto; padding: 0 1rem; }
+    main { background: #fff; padding: 2rem; border-radius: 12px; box-shadow: 0 2px 14px #dce2ea; }
+    h1 { margin-top: 0; }
+    textarea, input, button { box-sizing: border-box; font: inherit; padding: .7rem; border-radius: 7px; }
+    textarea, input { border: 1px solid #8b9ab0; }
+    textarea { width: 100%; resize: vertical; }
+    button { background: #1268d6; color: #fff; border: 0; cursor: pointer; }
+    button:disabled { cursor: wait; opacity: .7; }
+    .notice { margin: 1rem 0; padding: 1rem; border: 2px solid #a34a00; border-radius: 8px; background: #fff4e8; }
+    .notice strong { display: block; color: #742f00; }
+    .row { display: flex; flex-wrap: wrap; gap: .65rem; margin: .8rem 0; }
+    .row input { flex: 1 1 13rem; }
+    .confirmation { display: flex; align-items: flex-start; gap: .6rem; margin: 1rem 0; padding: .8rem; border: 1px solid #bcc7d6; border-radius: 7px; }
+    .confirmation input { margin-top: .25rem; }
+    .hint, #status { color: #41546c; }
+    #result-panel { margin-top: 1.5rem; border-top: 1px solid #dce2ea; padding-top: 1rem; }
+    #answer { white-space: pre-wrap; line-height: 1.5; }
+    .result-section { margin: 1rem 0; padding: 1rem; border: 1px solid #dce2ea; border-radius: 8px; }
+    .result-section h2, .result-section h3 { margin-top: 0; }
+    .citation-list, .trace-list { margin: 0; padding-left: 1.3rem; }
+    .citation-list li, .trace-list li { margin: .75rem 0; }
+    .tool-name { font-weight: 700; color: #0c4f9f; }
+    .trace-label { display: block; margin-top: .45rem; color: #41546c; font-size: .9rem; }
+    pre { overflow-wrap: anywhere; white-space: pre-wrap; background: #f2f5f8; padding: 1rem; border-radius: 7px; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>ClearHR</h1>
+    <div class="notice" role="alert">
+      <strong>Synthetic demo only — do not enter real personal information.</strong>
+      This app uses mock employee records and sample policies. Do not enter real names, employee IDs,
+      contact details, payroll data, health information, performance details, or workplace reports.
+    </div>
+
+    <label for="message">HR policy question</label>
+    <textarea id="message" rows="5" autocomplete="off">Can I take three days of PTO next week?</textarea>
+
+    <div class="row">
+      <label for="employee">Synthetic employee ID</label>
+      <input id="employee" value="E1001" inputmode="text" autocomplete="off" aria-describedby="employee-hint">
+      <button id="ask-button" type="button">Ask ClearHR</button>
+    </div>
+    <p id="employee-hint" class="hint">Optional: use only a sample ID such as E1001.</p>
+
+    <label class="confirmation" for="confirm-mock-action">
+      <input id="confirm-mock-action" type="checkbox">
+      <span>
+        I explicitly authorize ClearHR to prepare a <strong>mock</strong> HR case draft if my synthetic
+        demo request requires it. No real case is submitted and leaving this unchecked sends no mock action.
+      </span>
+    </label>
+
+    <p class="hint">Try PTO guidance (E1001), international remote work (E1003), or a benefits question.</p>
+    <p id="status" aria-live="polite">Ready.</p>
+    <section id="result-panel" hidden aria-live="polite">
+      <div class="result-section">
+        <h2>Final answer or action</h2>
+        <p id="answer"></p>
+        <p id="planner" class="hint"></p>
+      </div>
+      <div class="result-section">
+        <h2>Retrieved citations</h2>
+        <ul id="citations" class="citation-list"></ul>
+      </div>
+      <div class="result-section">
+        <h2>MCP tool calls</h2>
+        <p class="hint">Each entry shows the tool name, exact arguments sent, and a safely bounded returned-result preview.</p>
+        <ol id="trace" class="trace-list"></ol>
+      </div>
+      <details>
+        <summary>Raw response JSON</summary>
+        <pre id="response"></pre>
+      </details>
+    </section>
+  </main>
+  <script>
+    const messageInput = document.getElementById("message");
+    const employeeInput = document.getElementById("employee");
+    const confirmationInput = document.getElementById("confirm-mock-action");
+    const askButton = document.getElementById("ask-button");
+    const status = document.getElementById("status");
+    const resultPanel = document.getElementById("result-panel");
+    const answer = document.getElementById("answer");
+    const planner = document.getElementById("planner");
+    const citations = document.getElementById("citations");
+    const trace = document.getElementById("trace");
+    const response = document.getElementById("response");
+
+    function json(value) {
+      return JSON.stringify(value ?? null, null, 2);
+    }
+
+    function clearResults() {
+      resultPanel.hidden = true;
+      answer.textContent = "";
+      planner.textContent = "";
+      citations.replaceChildren();
+      trace.replaceChildren();
+      response.textContent = "";
+    }
+
+    function renderCitations(items) {
+      if (!Array.isArray(items) || items.length === 0) {
+        const empty = document.createElement("li");
+        empty.textContent = "No policy citation was returned for this response.";
+        citations.append(empty);
+        return;
+      }
+      for (const citation of items) {
+        const item = document.createElement("li");
+        const source = document.createElement("strong");
+        source.textContent = `${citation.document || "Unknown document"} — ${citation.section || "Unknown section"}`;
+        const snippet = document.createElement("div");
+        snippet.textContent = citation.snippet || "No snippet returned.";
+        item.append(source, snippet);
+        citations.append(item);
+      }
+    }
+
+    function renderTrace(steps) {
+      if (!Array.isArray(steps) || steps.length === 0) {
+        const empty = document.createElement("li");
+        empty.textContent = "No MCP tool call was needed for this response.";
+        trace.append(empty);
+        return;
+      }
+      for (const step of steps) {
+        const item = document.createElement("li");
+        const tool = document.createElement("span");
+        tool.className = "tool-name";
+        tool.textContent = step.tool || "Unknown MCP tool";
+        const argumentsLabel = document.createElement("span");
+        argumentsLabel.className = "trace-label";
+        argumentsLabel.textContent = "Arguments sent";
+        const arguments = document.createElement("pre");
+        arguments.textContent = json(step.arguments);
+        const resultLabel = document.createElement("span");
+        resultLabel.className = "trace-label";
+        resultLabel.textContent = "Returned result preview";
+        const result = document.createElement("pre");
+        result.textContent = json(step.result_preview ?? step.result_summary);
+        item.append(tool, argumentsLabel, arguments, resultLabel, result);
+        trace.append(item);
+      }
+    }
+
+    function renderResult(body) {
+      resultPanel.hidden = false;
+      answer.textContent = body.answer || body.detail || "No answer was returned.";
+      planner.textContent = body.planner ? `Planner used: ${body.planner}` : "";
+      renderCitations(body.citations);
+      renderTrace(body.trace);
+      response.textContent = json(body);
+    }
+
+    async function ask() {
+      askButton.disabled = true;
+      status.textContent = "Asking ClearHR…";
+      clearResults();
+      try {
+        const result = await fetch("/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            message: messageInput.value,
+            employee_id: employeeInput.value || null,
+            confirm_mock_action: confirmationInput.checked,
+          }),
+          cache: "no-store",
+        });
+        const body = await result.json().catch(() => ({ detail: "The service returned an invalid response." }));
+        status.textContent = result.ok ? "Response received." : `Request failed (${result.status}).`;
+        renderResult(body);
+      } catch (_) {
+        status.textContent = "Request failed.";
+        renderResult({ detail: "Unable to contact ClearHR. Please retry." });
+      } finally {
+        // Require a deliberate confirmation for each individual request.
+        confirmationInput.checked = false;
+        askButton.disabled = false;
+      }
+    }
+
+    askButton.addEventListener("click", ask);
+  </script>
+</body>
+</html>

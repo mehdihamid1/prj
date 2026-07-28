@@ -1,13 +1,35 @@
 name: CI
+
 on: [push, pull_request]
+
 jobs:
   test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-python@v5
-        with: {python-version: '3.11'}
-      - run: pip install -r requirements.txt
-      - run: python -c "from app.main import app; print(app.title)"
-      - run: python -m pytest -q
-      - run: python scripts/smoke_test.py
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Lint
+        run: ruff check app tests evaluation scripts
+
+      - name: Import check
+        run: python -c "from app.main import app; print(app.title)"
+
+      - name: Build the policy index
+        run: python -c "from app.rag import build_index; print(len(build_index()['chunks']), 'chunks indexed')"
+
+      - name: Unit, RAG and MCP tests
+        run: python -m pytest -q
+
+      - name: App-start and health smoke test
+        run: python scripts/smoke_test.py
+
+      - name: MCP tool discovery and live tool call
+        run: python scripts/mcp_check.py

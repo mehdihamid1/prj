@@ -3,5 +3,9 @@ uvicorn[standard]==0.51.0
 # Pin the mature v1.12 SDK: its stdio client/server contract is exercised in CI.
 mcp==1.12.4
 pydantic==2.13.4
+# LLM planner. The app degrades to deterministic routing when no key is set,
+# so this is required for the graded agentic behaviour but not to boot.
+anthropic==0.75.0
 pytest==8.4.2
 httpx==0.28.1
+ruff==0.14.4
