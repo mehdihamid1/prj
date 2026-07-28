@@ -45,3 +45,13 @@ def openai_api_key() -> str:
 def llm_enabled() -> bool:
     """True when a key is configured, so the planner path can be used."""
     return bool(openai_api_key())
+
+
+def expose_planner_errors() -> bool:
+    """Opt-in diagnostics for a failing LLM planner.
+
+    Off by default: a public demo should not return provider error text to an
+    anonymous caller. Turn it on temporarily in the host environment to find out
+    why the planner is degrading, then turn it off again.
+    """
+    return os.getenv("EXPOSE_PLANNER_ERRORS", "").strip().lower() in {"1", "true", "yes", "on"}

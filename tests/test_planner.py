@@ -281,6 +281,23 @@ def test_agent_falls_back_when_planner_raises(monkeypatch):
     assert result["planner"] == "deterministic-fallback"
     assert "provider unavailable" in result["planner_error"]
     assert result["answer"]
+    assert "give at least three  This is policy guidance" not in result["answer"]
+
+
+def test_evidence_excerpt_ends_on_a_complete_sentence():
+    """Fallback evidence must never cut a policy rule in the middle."""
+    from app import agent
+
+    excerpt = agent._evidence_excerpt([{
+        "id": "long-policy-section",
+        "text": (
+            "This sentence is complete. "
+            + "This deliberately long sentence continues without a full stop " * 20
+            + "until the source eventually ends."
+        ),
+    }])
+
+    assert excerpt == "This sentence is complete."
 
 
 @pytest.mark.parametrize("message", ["My manager is harassing me", "A colleague threatened me"])
@@ -364,3 +381,49 @@ def test_threat_escalation_includes_emergency_and_security_guidance(monkeypatch)
     assert result["planner"] == "safety-gate"
     assert "local emergency services first" in result["answer"]
     assert "Company Security" in result["answer"]
+
+
+def test_planner_error_detail_is_hidden_by_default(monkeypatch):
+    """A public demo must not return provider error text to an anonymous caller."""
+    from app import agent, settings
+
+    monkeypatch.delenv("EXPOSE_PLANNER_ERRORS", raising=False)
+    monkeypatch.setattr(settings, "llm_enabled", lambda: True)
+
+    async def _boom(*_args, **_kwargs):
+        raise RuntimeError("quota exhausted for org-secret")
+
+    monkeypatch.setattr(planner, "respond", _boom)
+
+    result = asyncio.run(agent.respond("How much PTO notice is required?", None, False))
+
+    assert result["planner"] == "deterministic-fallback"
+    assert "planner_error_detail" not in result
+    assert "org-secret" not in str(result)
+
+
+def test_planner_error_detail_is_returned_when_explicitly_enabled(monkeypatch):
+    """The opt-in diagnostic must surface the fields that identify the cause."""
+    from app import agent, settings
+
+    monkeypatch.setenv("EXPOSE_PLANNER_ERRORS", "1")
+    monkeypatch.setattr(settings, "llm_enabled", lambda: True)
+
+    class _QuotaError(RuntimeError):
+        status_code = 429
+        code = "insufficient_quota"
+
+    async def _boom(*_args, **_kwargs):
+        raise _QuotaError("You exceeded your current quota.")
+
+    monkeypatch.setattr(planner, "respond", _boom)
+
+    result = asyncio.run(agent.respond("How much PTO notice is required?", "E1001", False))
+
+    detail = result["planner_error_detail"]
+    assert detail["exception"] == "_QuotaError"
+    assert detail["status_code"] == 429
+    assert detail["code"] == "insufficient_quota"
+    assert "message" not in detail, "raw exception text belongs in the log, not the response"
+    # The degraded answer is still real evidence, not an apology.
+    assert result["citations"]

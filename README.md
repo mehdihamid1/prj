@@ -40,6 +40,8 @@ Open `http://127.0.0.1:8000` and try `E1001` with *"Can I take three days of PTO
 
 **Without an API key the app still runs.** It falls back to a deterministic rule-based planner over the same MCP tools, so every endpoint works and the test suite passes with no credentials. With `OPENAI_API_KEY` set, an LLM chooses the tools instead. In that mode, the user prompt and the tool schemas/results needed for the turn are sent to OpenAI; use this only with the repository's synthetic coursework data. Before recording the demo, use a real key and a model identifier accepted by your OpenAI account, then rerun the evaluation.
 
+If a non-empty key produces `planner: "deterministic-fallback"`, the provider call failed after the fallback path was selected. Inspect the secure host log for the exact exception. For temporary local troubleshooting, set `EXPOSE_PLANNER_ERRORS=true`; the response then includes only the exception class, HTTP status, and provider error code—not raw provider text. Turn it off before a public demo or deployment.
+
 ## Corpus
 
 14 synthetic policy documents, 15,969 words, in three formats — 11 Markdown, 2 HTML, 1 plain text — covering PTO, holidays, remote work, expenses, travel, equipment, benefits, leave, onboarding, data security, workplace conduct, compensation, performance, and health and safety. All three formats are parsed heading-aware so citations carry a real section name. The index is rebuilt deterministically at startup; there is no seed to set.

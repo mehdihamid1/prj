@@ -117,10 +117,41 @@ def _evidence_excerpt(results: list[dict[str, Any]]) -> str:
         if not isinstance(text, str) or identifier in seen:
             continue
         seen.add(identifier)
-        excerpts.append(text.replace("\n", " ")[:480])
+        excerpts.append(_sentence_bounded(text, 480))
         if len(excerpts) == 6:
             break
-    return " ".join(excerpts)[:2400]
+    return _sentence_bounded(" ".join(excerpts), 2400)
+
+
+def _sentence_bounded(text: str, limit: int) -> str:
+    """Bound display evidence without presenting a partial sentence as policy.
+
+    The deterministic fallback includes retrieved text in its final answer. A
+    character slice can split a rule in half (for example, ``three weeks``),
+    which makes a source-backed answer look unreliable. Prefer the last full
+    sentence inside the limit. The rare single-sentence-over-limit case keeps a
+    word-safe excerpt with an ellipsis so it is visibly incomplete rather than
+    appearing to be a complete policy statement.
+    """
+    normalized = " ".join(text.split())
+    if len(normalized) <= limit:
+        return normalized
+
+    window = normalized[:limit]
+    sentence_end = max(
+        (
+            index + 1
+            for index, character in enumerate(window)
+            if character in ".!?" and (index + 1 == len(window) or window[index + 1].isspace())
+        ),
+        default=0,
+    )
+    if sentence_end:
+        return window[:sentence_end]
+
+    word_end = window.rfind(" ")
+    safe_excerpt = window[:word_end] if word_end > 0 else window
+    return f"{safe_excerpt.rstrip()}…"
 
 
 def _cite(results: list[dict]) -> list[dict]:
@@ -409,6 +440,23 @@ async def _deterministic_respond(
     }
 
 
+def _error_detail(exc: BaseException) -> dict[str, Any]:
+    """Summarise a provider failure into the fields that identify its cause.
+
+    Only returned when EXPOSE_PLANNER_ERRORS is set. The SDK carries the useful
+    discriminators — HTTP status and the provider's own error code, such as
+    `insufficient_quota` or `model_not_found` — on the exception itself. Raw
+    exception text stays in the server log because it can contain account or
+    request details that do not belong in a browser response.
+    """
+    detail: dict[str, Any] = {"exception": type(exc).__name__}
+    for field in ("status_code", "code", "type"):
+        value = getattr(exc, field, None)
+        if isinstance(value, (int, str)) and value != "":
+            detail[field] = value
+    return detail
+
+
 async def respond(
     message: str,
     employee_id: str | None = None,
@@ -424,13 +472,15 @@ async def respond(
                 result = await planner.respond(message, employee_id, confirm_action)
                 result["citations"] = dedupe_citations(result.get("citations", []))
                 return result
-            except Exception:
+            except Exception as exc:
                 # A provider outage degrades to the deterministic planner rather than
                 # failing the request; the response says so instead of hiding it.
                 logger.warning("LLM planner failed; using deterministic fallback", exc_info=True)
                 fallback = await _deterministic_respond(message, employee_id, confirm_action)
                 fallback["planner"] = "deterministic-fallback"
                 fallback["planner_error"] = "LLM provider unavailable; used the evidence-based fallback."
+                if settings.expose_planner_errors():
+                    fallback["planner_error_detail"] = _error_detail(exc)
                 return fallback
 
         return await _deterministic_respond(message, employee_id, confirm_action)
