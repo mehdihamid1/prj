@@ -121,7 +121,7 @@ def test_planner_dispatches_tool_call_and_records_trace(monkeypatch):
     assert "five calendar days" in result["answer"]
 
     # GPT-5.6 Chat Completions function tools require effective no-reasoning.
-    assert stub.seen[0]["model"] == "gpt-5.6-sol"
+    assert stub.seen[0]["model"] == "gpt-5.6-luna"
     assert stub.seen[0]["reasoning_effort"] == "none"
     assert all(request["reasoning_effort"] == "none" for request in stub.seen)
 

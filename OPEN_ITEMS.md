@@ -7,7 +7,7 @@ test run from being presented as evidence about the live LLM system.
 ## Blocking: run the LLM planner with a real API key
 
 The tool-use loop is covered by stubbed tests, but no real OpenAI request has
-been made. The committed default is `gpt-5.6-sol`; fund the API project and
+been made. The committed default is `gpt-5.6-luna`; fund the API project and
 confirm that the supplied `OPENAI_API_KEY` can use that model before starting
 the app and exercising both demo tasks. Confirm in each response that `planner`
 is `llm`, the trace contains the expected MCP tool calls, and citations support
