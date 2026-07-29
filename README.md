@@ -4,7 +4,7 @@ ClearHR is a synthetic, free-tier-friendly HR assistant built for the AI Enginee
 
 Every policy and every employee record in this repository is fictional.
 
-**Deployed URL:** see [deployed.md](deployed.md).
+**Deployed URL:** [ClearHR on Render](https://clearhr-agentic-hr-assistant.onrender.com) · [health](https://clearhr-agentic-hr-assistant.onrender.com/health). This service runs the live LLM planner. Deployment status, cold-start notes, and the planner verification are recorded in [deployed.md](deployed.md).
 
 ## Architecture
 
@@ -106,7 +106,7 @@ python -m evaluation.run_eval --base-url https://your-service.example
 
 ## Submission checklist
 
-- [ ] Deploy and fill in [deployed.md](deployed.md) with the live URL and `/health` URL
+- [x] Deploy and record the live URL and `/health` URL in [deployed.md](deployed.md)
 - [ ] Re-run the evaluation with `OPENAI_API_KEY` set and commit [evaluation/results.md](evaluation/results.md)
 - [ ] Share the repository with the `quantic-grader` GitHub account
 - [ ] Record the 7–10 minute demo: two agentic tasks end to end, narrating tool names, arguments, outputs, citations, and the final answer, then a walkthrough of design, deployment, CI/CD, and evaluation

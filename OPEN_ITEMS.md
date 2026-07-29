@@ -29,13 +29,13 @@ Commit the resulting `evaluation/results.md`. The checked-in 100% metrics are
 for the local deterministic/safety paths only and must not be described as
 live-LLM-agent or deployed-host results.
 
-## Blocking: deploy and measure the public service
+## Blocking: measure the public service
 
-Deploy one service to Render or Railway using `DEPLOYMENT_GUIDE.md`. Put the
-public app URL and `/health` URL in `deployed.md`. Measure and record one cold
-request after inactivity plus several warm requests. Use the 29-case
-`--base-url` evaluator after deployment; it records client-observed HTTP status
-and latency but does not claim deployed citation IDs resolve to the local index.
+The Railway deployment is already public and its app and `/health` URLs are in
+`deployed.md`. What remains is to measure and record one cold request after
+inactivity plus several warm requests. Use the 29-case `--base-url` evaluator
+against the selected host; it records client-observed HTTP status and latency
+but does not claim deployed citation IDs resolve to the local index.
 
 The MCP stdio subprocess is started once at service boot rather than per
 request, so its ~0.6 s process-start cost is paid at startup and not on every
@@ -43,12 +43,12 @@ call. Measured locally: cold boot to a healthy `/health` is **1.7 s** against
 Railway's 60 s `healthcheckTimeout`; warm `/health` is **~3 ms**. What is still
 unmeasured in public is the host's wake-from-idle time and real LLM latency.
 
-## Blocking: publish the current changes and share the repository
+## Blocking: share the repository with the grader
 
-The enhanced corpus, LLM planner, evaluation harness, and latest MCP transport
-fixes are currently local changes. Commit and push them before connecting a host
-or asking a grader to inspect the repository. Share `mehdihamid1/prj` with the
-GitHub account `quantic-grader`.
+The current `main` branch is pushed to `mehdihamid1/prj` and has a successful
+GitHub Actions run. Share that repository with the GitHub account
+`quantic-grader` before submission. This access change must be performed by the
+repository owner and cannot be verified from the checked-in source.
 
 ## Blocking: record the demo
 

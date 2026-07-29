@@ -2,15 +2,29 @@
 
 ## URLs
 
-- Application URL: https://web-production-32831.up.railway.app
-- Health endpoint URL: https://web-production-32831.up.railway.app/health
+- Application URL: https://clearhr-agentic-hr-assistant.onrender.com
+- Health endpoint URL: https://clearhr-agentic-hr-assistant.onrender.com/health
 
-Host: Railway. Verified on 2026-07-28: `/health` returned HTTP 200 in 274 ms
-with `status: ok`, `mcp_connected: true`, and `mcp_tool_count: 6`.
+**Host: Render.** This is the submitted deployment. Verified on 2026-07-28:
+`/health` returned HTTP 200 in 402 ms with `status: ok`, `mcp_connected: true`,
+and `mcp_tool_count: 6`, and `/chat` reported `planner: "llm"` — the live
+LLM planner, not the deterministic fallback.
 
-The service currently runs the deterministic planner; `OPENAI_API_KEY` is not
-yet set in the host variables, so `/chat` reports `planner: "deterministic"`.
-Re-verify and update this note once the key is added.
+The 29-case evaluation in `evaluation/results.md` was run against this URL over
+HTTP. It recorded 29/29 HTTP success with client-observed latency of
+**2671 ms p50 and 4960 ms p95**, which includes real provider time.
+
+A Railway service exists from earlier testing and is **not** part of the
+submission. It has no API key configured and answers on the deterministic
+fallback, so it must not be used to demonstrate agentic behaviour.
+
+### Cold start
+
+Render's free instance sleeps after roughly 15 minutes of inactivity. The
+latency above is warm. Wake the service before recording the demo, and record
+one measured cold request here:
+
+- Cold request after inactivity: **not yet measured**
 
 ## Deployment configuration
 

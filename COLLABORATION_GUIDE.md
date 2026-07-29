@@ -138,7 +138,7 @@ today's uncommitted work or a future push:
 | `.env` tracked, or present on disk | Neither; `.gitignore` covers it |
 | Values assigned in `.env.example` | Only non-secret defaults; `OPENAI_API_KEY` is blank |
 | Real personal data in `mock_data/` | None — three invented employees |
-| Commits in history | 1 |
+| Git history at review time | No secret-shaped strings were found; repeat the scan against the exact commit being shared |
 
 The only matches for "API key" anywhere in the repository are the source lines
 that *read* the `OPENAI_API_KEY` environment variable name, and the
