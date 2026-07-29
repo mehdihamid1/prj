@@ -6,8 +6,10 @@ for local development but is not evidence that the real planner was tested.
 
 ## Before recording
 
-1. Confirm `GET /health` returns HTTP 200 with `"status": "ok"` and
-   `"mcp_connected": true`.
+1. Confirm `GET /health` returns HTTP 200 with `"status": "ok"`,
+   `"mcp_connected": true`, matching child `"rag_backend"` and parent
+   `"configured_rag_backend"`, `"rag_status_source": "mcp_child"`, and — for dense mode —
+   `"dense_encoder_loaded": true`.
 2. Run both tasks once and confirm the response says `"planner": "llm"`.
 3. Use only the synthetic IDs and prompts below. Do not enter a real name,
    employee ID, complaint, payroll/benefits detail, or a real workplace report.

@@ -9,11 +9,30 @@ mcp = FastMCP(
     log_level="WARNING",
 )
 
+_ready_index: dict | None = None
+
 
 @mcp.tool()
 def search_policy_documents(query: str, limit: int = 4) -> list[dict]:
     """Retrieve grounded policy chunks with citation metadata."""
     return rag.search(query, min(max(limit, 1), 8))
+
+
+@mcp.tool()
+def get_retrieval_status() -> dict:
+    """Report the effective non-secret RAG settings in this MCP child process.
+
+    This is an operational diagnostic, not an agent capability. The FastAPI
+    health endpoint calls it through the same stdio session as every real tool
+    call, so it reports the child process's environment rather than the web
+    parent's configuration. The LLM capability allow-list intentionally omits
+    it, preventing diagnostic calls from consuming an agent turn.
+    """
+    # `run_stdio()` stores the warmed index before accepting the MCP handshake.
+    # The fallback keeps direct unit use safe without making normal health
+    # probes rebuild an index or reload a dense model.
+    index = _ready_index if _ready_index is not None else rag.ensure_ready()
+    return rag.runtime_status(index)
 
 
 @mcp.tool()
@@ -70,7 +89,8 @@ def run_stdio() -> None:
     # encoder.  It finishes index/model readiness before the stdio handshake,
     # so /health cannot report a usable tool service while the model is still
     # downloading or warming.
-    rag.ensure_ready()
+    global _ready_index
+    _ready_index = rag.ensure_ready()
     mcp.run(transport="stdio")
 
 

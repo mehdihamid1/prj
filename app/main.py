@@ -145,14 +145,50 @@ async def home() -> FileResponse:
 async def health():
     try:
         tools = await discover_tools()
-        # Report the retriever so the running backend can be confirmed directly
-        # rather than inferred from the score range in a /chat trace. The value
-        # is a non-secret deployment setting, not a credential.
+        child_status = await mcp_client.retrieval_status()
+        configured_backend = settings.rag_backend()
+        child_backend = child_status["rag_backend"]
+        # Retrieval executes in the MCP child. A parent-only environment value
+        # is not deployment evidence: it can disagree with the process that
+        # actually answers policy questions. Fail the health check loudly on a
+        # mismatch instead of reporting a misleading 200.
+        if child_backend != configured_backend:
+            logger.warning(
+                "MCP child RAG backend mismatch: parent=%s child=%s",
+                configured_backend,
+                child_backend,
+            )
+            return JSONResponse(
+                status_code=503,
+                content={
+                    "status": "misconfigured",
+                    "mcp_connected": True,
+                    "rag_status_source": "mcp_child",
+                    "rag_backend": child_backend,
+                    "configured_rag_backend": configured_backend,
+                },
+                headers={"Cache-Control": "no-store"},
+            )
+
+        # All fields are non-secret operational facts. `rag_backend` is the
+        # value returned by the child, while `configured_rag_backend` makes a
+        # future mismatch diagnosable without revealing provider credentials.
         return {
             "status": "ok",
             "mcp_connected": True,
+            "rag_status_source": "mcp_child",
             "mcp_tool_count": len(tools),
-            "rag_backend": settings.rag_backend(),
+            "rag_backend": child_backend,
+            "configured_rag_backend": configured_backend,
+            "rag_model": child_status.get("rag_model"),
+            "rag_index": child_status.get("rag_index"),
+            "rag_index_version": child_status.get("rag_index_version"),
+            "rag_chunks": child_status.get("rag_chunks"),
+            "rag_dimensions": child_status.get("rag_dimensions"),
+            "rag_provider": child_status.get("rag_provider"),
+            "rag_storage": child_status.get("rag_storage"),
+            "dense_encoder_loaded": child_status.get("dense_encoder_loaded"),
+            "planner_model": settings.OPENAI_MODEL,
         }
     except Exception:
         logger.warning("Health check could not reach the MCP service")
@@ -162,6 +198,7 @@ async def health():
                 "status": "unavailable",
                 "mcp_connected": False,
                 "rag_backend": settings.rag_backend(),
+                "configured_rag_backend": settings.rag_backend(),
             },
             headers={"Cache-Control": "no-store"},
         )

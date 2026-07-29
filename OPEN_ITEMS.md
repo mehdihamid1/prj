@@ -28,7 +28,9 @@ revision and run both the retrieval ablation and the public HTTP evaluation:
 
 ```bash
 python -m evaluation.run_eval --ablation
-python -m evaluation.run_eval --base-url https://clearhr-agentic-hr-assistant.onrender.com
+python -m evaluation.run_eval --base-url https://clearhr-agentic-hr-assistant.onrender.com --runs 3 \
+  --require-rag-backend dense --deployment-revision <deployed-sha> \
+  --deployment-model gpt-5.6-luna
 ```
 
 Commit the resulting `evaluation/results.md` and `evaluation/artifacts.json`.
@@ -39,12 +41,13 @@ do not weaken an answer rubric merely to inflate a score.
 ## Blocking: deploy and verify dense retrieval, then repeat public evaluation
 
 The current report is a 29-case lexical MCP-child runtime baseline. It must not
-be presented as evidence for dense end-to-end performance. Deploy `94639a7`,
-then perform a controlled policy query and verify child-side dense retrieval;
-the build log and parent `/health` value alone are insufficient. Only then run
-the public HTTP evaluation again and replace the report/artifacts with the
-verified dense results. Record one cold request after Render inactivity in
-`deployed.md` as part of that deployment evidence.
+be presented as evidence for dense end-to-end performance. Deploy the current
+revision, then require `/health` to show `rag_status_source: mcp_child`,
+matching child `rag_backend: dense`, parent `configured_rag_backend: dense`,
+and `dense_encoder_loaded: true`.
+Only then run the three sequential public HTTP evaluations and replace the
+report/artifacts with median/min–max dense results. Record one cold request
+after Render inactivity in `deployed.md` as part of that deployment evidence.
 
 The MCP stdio subprocess is started once at service boot rather than per
 request, so its ~0.6 s process-start cost is paid at startup and not on every
@@ -56,7 +59,7 @@ unmeasured in public is the host's wake-from-idle time and real LLM latency.
 
 The Render configuration requests `RAG_BACKEND=dense` with local FastEmbed
 `BAAI/bge-small-en-v1.5` vectors and a versioned `data/index.dense.json` store,
-but it must redeploy `94639a7` before the MCP child can be considered dense.
+but it must redeploy the current revision before the MCP child can be considered dense.
 The local retriever comparison in
 [`evaluation/dense_rag_comparison.md`](evaluation/dense_rag_comparison.md)
 improves default-k expected-document recall from 64% to 82% and complete

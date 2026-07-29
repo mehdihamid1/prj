@@ -4,6 +4,7 @@ from app.mcp_client import call, discover_tools
 
 REQUIRED_TOOLS = {
     "search_policy_documents",
+    "get_retrieval_status",
     "get_policy_section",
     "lookup_employee_profile",
     "check_pto_balance",
@@ -51,6 +52,24 @@ def test_mcp_tool_call_returns_policy_evidence():
     assert isinstance(result, list) and result
     top = result[0]
     assert {"id", "document", "section", "text", "score"} <= top.keys()
+
+
+def test_mcp_status_reports_the_child_owned_retriever_without_secrets():
+    """The status result comes from the stdio child, not the web process."""
+    from app import settings
+
+    status = asyncio.run(call("get_retrieval_status", {}))
+
+    assert status["rag_backend"] == settings.rag_backend()
+    assert status["index_backend"] == status["rag_backend"]
+    assert status["rag_chunks"] > 0
+    assert "OPENAI_API_KEY" not in status
+    if status["rag_backend"] == "dense":
+        assert status["dense_encoder_loaded"] is True
+        assert status["rag_provider"] == "fastembed"
+    else:
+        assert status["dense_encoder_loaded"] is False
+        assert status["rag_model"] == "sparse-hash-idf"
 
 
 def test_mcp_tool_call_returns_structured_record():
@@ -170,3 +189,16 @@ def test_provider_credential_is_not_forwarded_to_the_tool_process(monkeypatch):
     from app import mcp_client
 
     assert "OPENAI_API_KEY" not in mcp_client._server_environment()
+
+
+def test_independent_mcp_check_forwards_retrieval_settings_but_not_provider_key(monkeypatch):
+    """CI's separate protocol checker must not accidentally test lexical only."""
+    from scripts import mcp_check
+
+    monkeypatch.setenv("RAG_BACKEND", "dense")
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-should-not-reach-check-child")
+
+    environment = mcp_check._child_environment()
+
+    assert environment["RAG_BACKEND"] == "dense"
+    assert "OPENAI_API_KEY" not in environment

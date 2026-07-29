@@ -423,6 +423,48 @@ def ensure_ready() -> dict[str, Any]:
     return index
 
 
+def runtime_status(index: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Return safe, child-owned facts about the effective retrieval runtime.
+
+    This function is used by the MCP diagnostic tool after ``ensure_ready()``.
+    It deliberately reports the selected backend, the loaded index metadata,
+    and whether the dense encoder lives in *this* process. It never returns
+    policy text, embeddings, environment variables, or provider credentials.
+    """
+    backend = _backend_name()
+    active_index = index or load_index(backend)
+    index_backend = active_index.get("backend")
+    if index_backend != backend:
+        raise RuntimeError("Loaded RAG index backend does not match the configured backend.")
+
+    embedding = active_index.get("embedding")
+    if backend == "dense":
+        if not isinstance(embedding, dict):
+            raise RuntimeError("Dense RAG index is missing embedding metadata.")
+        model = embedding.get("model")
+        dimensions = embedding.get("dimensions")
+        provider = embedding.get("provider")
+        storage = embedding.get("storage")
+    else:
+        model = "sparse-hash-idf"
+        dimensions = DIMENSIONS
+        provider = "local"
+        storage = embedding
+
+    return {
+        "rag_backend": backend,
+        "index_backend": index_backend,
+        "rag_index": _index_path(backend).name,
+        "rag_index_version": active_index.get("version"),
+        "rag_chunks": len(active_index.get("chunks", [])),
+        "rag_model": model,
+        "rag_dimensions": dimensions,
+        "rag_provider": provider,
+        "rag_storage": storage,
+        "dense_encoder_loaded": _dense_encoder is not None if backend == "dense" else False,
+    }
+
+
 def _lexical_support(item: dict[str, Any], wanted: set[str]) -> float:
     present = wanted & set(_tokens(
         f"{item['document']} {item['title']} {item['section']} {item['text']}"

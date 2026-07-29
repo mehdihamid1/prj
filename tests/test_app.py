@@ -46,7 +46,9 @@ def test_health_returns_safe_503_when_mcp_is_unavailable(monkeypatch):
     assert body["mcp_connected"] is False
     # The degraded body may carry non-secret deployment facts such as the active
     # retriever, but never the exception text, which can name internal detail.
-    assert set(body) <= {"status", "mcp_connected", "rag_backend"}
+    assert set(body) <= {
+        "status", "mcp_connected", "rag_backend", "configured_rag_backend",
+    }
     assert b"internal-token-value" not in result.body
 
 
@@ -138,21 +140,60 @@ def test_demo_page_includes_an_accurate_workflow_map():
     assert "final answer, citations, and exact MCP tool trace" in page
 
 
-def test_health_reports_the_active_rag_backend(monkeypatch):
-    """The deployed retriever must be checkable directly, not inferred from score ranges.
-
-    render.yaml pins RAG_BACKEND at service level for both the build and the
-    runtime; this endpoint is how a deploy is confirmed to be running the
-    backend the repository claims.
-    """
-    from fastapi.testclient import TestClient
-
+def test_health_reports_the_mcp_child_rag_backend(monkeypatch):
+    """Health must query the child; a parent setting alone is not evidence."""
     from app import settings
-    from app.main import app
+
+    async def tools():
+        return [{"name": "get_retrieval_status"}]
+
+    async def child_status():
+        return {
+            "rag_backend": "dense",
+            "index_backend": "dense",
+            "rag_model": "BAAI/bge-small-en-v1.5",
+            "rag_index": "index.dense.json",
+            "rag_index_version": 5,
+            "rag_chunks": 142,
+            "rag_dimensions": 384,
+            "rag_provider": "fastembed",
+            "rag_storage": "local-json-dense-vector-index",
+            "dense_encoder_loaded": True,
+        }
 
     monkeypatch.setattr(settings, "rag_backend", lambda: "dense")
-    with TestClient(app) as client:
-        payload = client.get("/health").json()
+    monkeypatch.setattr(main, "discover_tools", tools)
+    monkeypatch.setattr(main.mcp_client, "retrieval_status", child_status)
+
+    payload = asyncio.run(main.health())
 
     assert payload["rag_backend"] == "dense"
+    assert payload["configured_rag_backend"] == "dense"
+    assert payload["rag_status_source"] == "mcp_child"
+    assert payload["rag_model"] == "BAAI/bge-small-en-v1.5"
+    assert payload["dense_encoder_loaded"] is True
     assert payload["status"] == "ok"
+
+
+def test_health_returns_safe_503_when_parent_and_child_backend_disagree(monkeypatch):
+    async def tools():
+        return [{"name": "get_retrieval_status"}]
+
+    async def child_status():
+        return {"rag_backend": "lexical", "index_backend": "lexical"}
+
+    monkeypatch.setattr(main.settings, "rag_backend", lambda: "dense")
+    monkeypatch.setattr(main, "discover_tools", tools)
+    monkeypatch.setattr(main.mcp_client, "retrieval_status", child_status)
+
+    result = asyncio.run(main.health())
+
+    assert isinstance(result, JSONResponse)
+    assert result.status_code == 503
+    assert json.loads(result.body) == {
+        "status": "misconfigured",
+        "mcp_connected": True,
+        "rag_status_source": "mcp_child",
+        "rag_backend": "lexical",
+        "configured_rag_backend": "dense",
+    }

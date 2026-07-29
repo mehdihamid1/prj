@@ -209,3 +209,22 @@ async def discover_tools() -> list[dict[str, Any]]:
 async def call(name: str, arguments: dict[str, Any]) -> Any:
     """Call a named MCP tool over stdio and return its structured result."""
     return _payload(await _invoke("call_tool", name, arguments))
+
+
+async def retrieval_status() -> dict[str, Any]:
+    """Return the effective retrieval configuration from the MCP child.
+
+    Do not substitute a parent-process environment variable here: this call is
+    deliberately how `/health` proves that the process serving RAG loaded the
+    claimed backend. The result contains only operational metadata, never a
+    provider credential or policy/employee content.
+    """
+    status = await call("get_retrieval_status", {})
+    if not isinstance(status, dict):
+        raise RuntimeError("MCP retrieval status was not an object")
+    backend = status.get("rag_backend")
+    if backend not in {"lexical", "dense"} or status.get("index_backend") != backend:
+        raise RuntimeError("MCP retrieval status had an invalid backend")
+    if backend == "dense" and status.get("dense_encoder_loaded") is not True:
+        raise RuntimeError("MCP dense retrieval encoder is not ready")
+    return status

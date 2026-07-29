@@ -16,7 +16,11 @@ and commands below rather than relying on an old screenshot.
 
 1. Sign in to [Render](https://dashboard.render.com/) and connect the GitHub account that contains this project.
 2. Select **New** → **Blueprint**.
-3. Select the ClearHR repository and the branch to deploy.
+3. Select the ClearHR repository and the **`main`** branch to deploy — not a
+   feature branch or a pull-request branch. If a service already exists, check
+   its configured branch before redeploying; switch it to `main`, save, then
+   manually deploy the latest `main` commit. A successful build from another
+   branch is not evidence that the submitted source is running.
 4. Render reads [render.yaml](render.yaml) automatically. Confirm that it creates one **Web Service** named `clearhr-agentic-hr-assistant`.
 5. Confirm these values in the preview:
 
@@ -34,7 +38,7 @@ and commands below rather than relying on an old screenshot.
 
 6. Click **Apply** / **Create Blueprint** and watch the deployment log. The build must finish with passing tests before Render starts the web service.
 7. In the service's **Environment** settings, add `OPENAI_API_KEY`. Leave `OPENAI_MODEL` unset so the committed `gpt-5.6-luna` default applies, or set it explicitly to `gpt-5.6-luna`. The submitted `render.yaml` pins `RAG_BACKEND=dense` so the build and runtime agree. To roll back, change that Blueprint value to `lexical` and rebuild; do not rely on a conflicting environment-group value. Do not point a shared service at a costlier model: every collaborator's request is billed to the deployment owner's account. Do not put secrets in `render.yaml`, a commit, or a screenshot. The default 60-second demo guard is 30 requests per client and 60 total; adjust its `CHAT_RATE_*` variables only if you understand the cost/privacy trade-off.
-8. When the service is live, copy its public `https://...onrender.com` URL. Open `<service-url>/health`; it must return HTTP 200 with JSON `"status": "ok"` and `"mcp_connected": true`. An HTTP 503 means the local MCP child is unavailable and must be fixed before recording the demo.
+8. When the service is live, copy its public `https://...onrender.com` URL. Open `<service-url>/health`; it must return HTTP 200 with `"status": "ok"`, `"mcp_connected": true`, `"rag_status_source": "mcp_child"`, and matching `"rag_backend"` / `"configured_rag_backend"` values. `rag_backend` is reported by the MCP child, not inferred from the web process. An HTTP 503 means the child is unavailable or its backend disagrees with the parent and must be fixed before recording the demo.
 9. Open the root URL and submit the PTO demo request: “Can I take three days of PTO next week?” with employee ID `E1001`. Confirm the response reports `planner: "llm"` before treating it as a live-LLM demo.
 10. Paste the public app and health URLs into [deployed.md](deployed.md). Note the time of the first request after inactivity as the cold-start observation.
 
@@ -43,7 +47,7 @@ If Render does not detect the Blueprint, create **New** → **Web Service** and 
 ## Option B — Railway
 
 1. Sign in to [Railway](https://railway.app/) and create a **New Project**.
-2. Select **Deploy from GitHub repo**, authorize GitHub if prompted, and select the ClearHR repository and branch.
+2. Select **Deploy from GitHub repo**, authorize GitHub if prompted, and select the ClearHR repository and the **`main`** branch. Do not use a feature or pull-request branch for the submitted service.
 3. Railway reads [railway.toml](railway.toml). In the service’s deployment settings, confirm:
 
    | Setting | Value |
@@ -57,7 +61,7 @@ If Render does not detect the Blueprint, create **New** → **Web Service** and 
 4. In the service's **Variables** settings, add `OPENAI_API_KEY` and set `RAG_BACKEND=lexical`. Leave `OPENAI_MODEL` unset so the committed `gpt-5.6-luna` default applies, or set it explicitly to `gpt-5.6-luna`. Do not point a shared service at a costlier model: every collaborator's request is billed to the deployment owner's account. Do not put secrets in `railway.toml`, a commit, or a screenshot. The default 60-second demo guard is 30 requests per client and 60 total; adjust its `CHAT_RATE_*` variables only if you understand the cost/privacy trade-off.
 5. Start the deployment and watch the logs. Do not change `PORT`; Railway supplies it automatically.
 6. After a successful deployment, open the service’s **Settings** → **Networking** and choose **Generate Domain**.
-7. Open `<railway-domain>/health`. It must return HTTP 200 with `"status": "ok"` and `"mcp_connected": true`; HTTP 503 means the MCP child is not usable yet.
+7. Open `<railway-domain>/health`. It must return HTTP 200 with `"status": "ok"`, `"mcp_connected": true`, `"rag_status_source": "mcp_child"`, and matching child `"rag_backend"` / parent `"configured_rag_backend"`; HTTP 503 means the MCP child is not usable yet or its backend is mismatched.
 8. Open the root URL and run the PTO demo with employee ID `E1001`. Confirm the response reports `planner: "llm"` before recording a live-LLM demo.
 9. Paste the public app and health URLs into [deployed.md](deployed.md), including any observed cold-start behavior.
 
@@ -67,10 +71,12 @@ If Render does not detect the Blueprint, create **New** → **Web Service** and 
 2. Run the 29-case deployment evaluation from a machine with the repository checked out:
 
    ```bash
-   python -m evaluation.run_eval --base-url https://your-service.example
+   python -m evaluation.run_eval --base-url https://your-service.example --runs 3 \
+     --require-rag-backend dense --deployment-revision <deployed-sha> \
+     --deployment-model gpt-5.6-luna
    ```
 
-   Record the generated measured results in `evaluation/results.md`. This is HTTP latency from the evaluation client; separately record one cold request after inactivity in `deployed.md`.
+   Record the generated median/min–max repeated-run results in `evaluation/results.md`. The artifact retains every run, rather than selecting the best. This is HTTP latency from the evaluation client; separately record one cold request after inactivity in `deployed.md`.
 3. Confirm GitHub Actions is green on the deployed branch. Render automatic
    deploys wait for those checks through `autoDeployTrigger: checksPass`;
    Railway's equivalent protection in this repository is its host build command
@@ -80,8 +86,8 @@ If Render does not detect the Blueprint, create **New** → **Web Service** and 
 
 ### Dense-RAG verification and rollback
 
-1. Confirm the build log includes `"backend": "dense"`, then verify `/health` and a controlled policy query. A build log and the parent `/health` field do not prove the MCP child is dense: deploy `94639a7` or later, then inspect child-side retrieval evidence (for example, the policy-query trace) before making that claim. The MCP child must become ready within the host's 60-second health window.
-2. Record boot-to-`/health`, first `/chat` after sleep, warm latency, and total service memory if the host exposes it. Run the local retrieval ablation and the 29-case public HTTP evaluation after that child-side verification; write those results to the repository before claiming dense improvement.
+1. Confirm the build log includes `"backend": "dense"`, then deploy the current revision and open `/health`. It must return HTTP 200 with `"rag_status_source": "mcp_child"`, child `"rag_backend": "dense"`, matching `"configured_rag_backend": "dense"`, and `"dense_encoder_loaded": true`. A build log or a parent-only setting is not sufficient proof. The MCP child must become ready within the host's 60-second health window.
+2. Record boot-to-`/health`, first `/chat` after sleep, warm latency, and total service memory if the host exposes it. Run the local retrieval ablation and the three-run public HTTP evaluation after that child-side verification; write those results to the repository before claiming dense improvement.
 3. If a health check fails, cold start is impractical, or memory approaches the plan limit, change the Blueprint value to `RAG_BACKEND=lexical` and redeploy. No data migration or code rollback is needed because the two indexes use separate files and preserve the MCP schema.
 
 ## If the deployment fails

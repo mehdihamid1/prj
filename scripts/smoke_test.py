@@ -1,6 +1,7 @@
 """Start the production ASGI command and verify the public health contract."""
 from __future__ import annotations
 
+import json
 import os
 import socket
 import subprocess
@@ -29,8 +30,14 @@ def main() -> None:
         while time.monotonic() < deadline:
             try:
                 with urlopen(f"http://127.0.0.1:{port}/health", timeout=1) as response:
-                    body = response.read().decode("utf-8")
-                    if response.status == 200 and '"status":"ok"' in body and '"mcp_connected":true' in body:
+                    body = json.loads(response.read().decode("utf-8"))
+                    if (
+                        response.status == 200
+                        and body.get("status") == "ok"
+                        and body.get("mcp_connected") is True
+                        and body.get("rag_status_source") == "mcp_child"
+                        and body.get("rag_backend") == body.get("configured_rag_backend")
+                    ):
                         print("Production server smoke test passed")
                         return
             except OSError:
