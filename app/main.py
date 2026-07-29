@@ -17,7 +17,6 @@ from pydantic import BaseModel, Field
 from . import mcp_client
 from .agent import respond
 from .mcp_client import discover_tools
-from .rag import build_index
 
 logger = logging.getLogger(__name__)
 
@@ -98,9 +97,9 @@ def _reset_chat_rate_limit() -> None:
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    # Build the index before the MCP server starts, so the child process reads a
-    # finished index rather than racing to build its own copy.
-    build_index()
+    # The persistent MCP child owns RAG readiness.  In dense mode it is the
+    # only process allowed to load the ONNX embedding model, avoiding a second
+    # model copy in this web process on a 512 MB free-tier container.
     try:
         await mcp_client.startup()
     except Exception:

@@ -45,6 +45,12 @@ scope in a different task"*. If the child process dies, the next call
 transparently restarts it; `tests/test_mcp.py` covers both the shared-session and
 restart behaviours.
 
+When `RAG_BACKEND=dense`, `app.mcp_server.run_stdio()` warms the FastEmbed/BGE
+model before it starts the stdio handshake. That keeps the model in this child
+process, rather than loading a duplicate copy in the FastAPI parent, and means
+`/health` cannot report a connected MCP server while dense RAG is still warming.
+`RAG_BACKEND=lexical` remains the dependency-light rollback path.
+
 ## Tool definitions
 
 Six tools. Two read the RAG index, four read or draft against synthetic records.
@@ -53,7 +59,7 @@ served live at `GET /tools`.
 
 | Tool | Arguments | Returns | Backed by |
 | --- | --- | --- | --- |
-| `search_policy_documents` | `query: str`, `limit: int = 4` | Ranked policy chunks with `id`, `document`, `section`, `text`, `score`, `support` | RAG index |
+| `search_policy_documents` | `query: str`, `limit: int = 4` | Ranked policy chunks with `id`, `document`, `section`, `text`, `score`, per-chunk lexical `support`, and corpus-level `query_support` | RAG index |
 | `get_policy_section` | `document: str`, `section: str` | Every chunk of one named section | RAG index |
 | `lookup_employee_profile` | `employee_id: str` | Employment type, role, manager, home state, office | `mock_data/employees.json` |
 | `check_pto_balance` | `employee_id: str` | `available_hours`, accrual rate | `mock_data/pto_balances.json` |

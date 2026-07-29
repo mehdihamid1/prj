@@ -6,6 +6,9 @@ pydantic==2.13.4
 # LLM planner. The app degrades to deterministic routing when no key is set,
 # so this is required for the graded agentic behaviour but not to boot.
 openai==1.109.1
+# Local semantic embeddings for the optional dense RAG backend.  The model is
+# cached under data/ during host build and loaded only in the MCP child process.
+fastembed==0.8.0
 pytest==8.4.2
 httpx==0.28.1
 ruff==0.14.4

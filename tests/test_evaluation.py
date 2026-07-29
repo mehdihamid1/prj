@@ -174,3 +174,31 @@ def test_artifacts_include_synthetic_answer_and_trace_for_human_review(tmp_path)
     assert artifact["answer"] == "Employees need five calendar days of notice."
     assert artifact["citations"][0]["id"] == "pto-1"
     assert artifact["trace"][0]["tool"] == "search_policy_documents"
+
+
+def test_retrieval_ablation_reports_strict_multi_document_coverage(monkeypatch):
+    cases = [
+        _case(id="one", expected_documents=["pto_policy.md"]),
+        _case(
+            id="two",
+            question="What applies to overseas work?",
+            expected_documents=["remote_work_policy.md", "data_security_policy.html"],
+        ),
+    ]
+
+    def fake_search(question: str, _limit: int):
+        if question == cases[0]["question"]:
+            return [{"document": "pto_policy.md"}, {"document": "expense_policy.md"}]
+        return [
+            {"document": "remote_work_policy.md"},
+            {"document": "remote_work_policy.md"},
+        ]
+
+    monkeypatch.setattr(run_eval, "search", fake_search)
+    row = run_eval.retrieval_ablation(cases, ks=(2,))[0]
+
+    assert row["recall"] == "2/2 (100%)"
+    assert row["expected_document_recall"] == "2/3 (67%)"
+    assert row["complete_coverage"] == "1/2 (50%)"
+    # Repeated remote-work chunks are one retrieved document, not two precise hits.
+    assert row["document_precision"] == "2/3 (67%)"

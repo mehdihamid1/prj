@@ -68,6 +68,28 @@ a model path that relied too heavily on prompt-only grounding.
 block the stdio child process used by real MCP tests. Validation therefore used
 the same normal-host process model expected by Render/Railway for MCP lifecycle
 checks; it must still be rerun in GitHub Actions and on the selected host before
-submission. The project also deliberately retains a small lexical RAG index
-instead of claiming it is a pretrained semantic embedding store; that remaining
-rubric risk is tracked in `OPEN_ITEMS.md`.
+submission.
+
+## Dense-RAG verification pass
+
+Codex then implemented the previously deferred semantic retrieval option rather
+than continuing to describe it as future work. It added a pinned local
+FastEmbed/BGE encoder, a versioned dense-vector index, a lexical feature flag
+for immediate rollback, model warm-up in the MCP child only, host-build index
+creation, dense contract tests that do not download a model in CI, and stricter
+retrieval-ablation metrics. It also measured the real model rather than
+guessing from its file size: the 142-vector index is small, but the local
+Python-3.11 ONNX process reached about 293 MB RSS. That changed the deployment recommendation
+from “enable dense by default” to “run an explicit host trial first.” The
+comparison and its limits are recorded in
+[`evaluation/dense_rag_comparison.md`](evaluation/dense_rag_comparison.md) and
+`OPEN_ITEMS.md`.
+
+**What worked well.** Keeping the lexical representation behind a feature flag
+made a material architecture change reversible, while mocked encoder tests kept
+CI deterministic and independent of model downloads.
+
+**What required human review.** The final free-tier choice cannot be made from
+a laptop RSS number alone. Render/Railway must measure total parent-plus-child
+memory, cold boot, and the public LLM evaluation before dense RAG is presented
+as the submitted deployment configuration.

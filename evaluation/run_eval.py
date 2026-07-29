@@ -488,15 +488,20 @@ def render(summary: dict[str, Any], rows: list[dict[str, Any]], ablation: list[d
         lines += [
             "## Retrieval ablation",
             "",
-            "Measured on the local retriever over cases that name expected documents. Recall is the "
-            "share of cases where any required document appears in the top k; MRR is the mean "
-            "reciprocal rank of the first required document.",
+            "Measured on the local retriever over cases that name expected documents. The first "
+            "recall column is the legacy any-document hit rate; expected-document recall and complete "
+            "coverage are stricter, especially for multi-document questions. Precision counts distinct "
+            "retrieved document names, so repeated chunks from one policy cannot inflate the result. "
+            "MRR is the mean reciprocal rank of the first required document.",
             "",
-            "| Top-k | Document recall@k | MRR |",
-            "| --- | --- | --- |",
+            "| Top-k | Any-doc recall | Expected-doc recall | Complete coverage | Doc precision | MRR |",
+            "| --- | --- | --- | --- | --- | --- |",
         ]
         for row in ablation:
-            lines.append(f"| {row['k']} | {row['recall']} | {row['mrr']} |")
+            lines.append(
+                f"| {row['k']} | {row['recall']} | {row['expected_document_recall']} | "
+                f"{row['complete_coverage']} | {row['document_precision']} | {row['mrr']} |"
+            )
         lines.append("")
 
     lines += [
@@ -535,22 +540,53 @@ def write_artifacts(rows: list[dict[str, Any]], path: Path) -> None:
 
 
 def retrieval_ablation(cases: list[dict[str, Any]], ks: tuple[int, ...] = (1, 2, 4, 6, 8)) -> list[dict[str, Any]]:
-    """Measure retrieval directly across k, rather than end-to-end behaviour."""
+    """Measure direct document recall, coverage, noise, and rank across k.
+
+    A multi-policy answer is not fully retrieved merely because its first
+    policy appears.  The old metric retained below as ``recall`` is useful for
+    comparison with prior reports; the accompanying micro recall and complete
+    coverage expose the more meaningful multi-document behaviour.
+    """
     graded = [case for case in cases if case.get("expected_documents")]
     rows = []
     for k in ks:
-        hits = 0
+        any_document_hits = 0
+        complete_hits = 0
+        expected_document_hits = 0
+        expected_document_total = 0
+        retrieved_document_hits = 0
+        retrieved_document_total = 0
         reciprocal = 0.0
         for case in graded:
             expected = set(case["expected_documents"])
             retrieved = [chunk["document"] for chunk in search(case["question"], k)]
+            # A tool returns chunks, but this is a document-level evaluation.
+            # Preserve first appearance/order for MRR while deduplicating the
+            # precision denominator and multi-document coverage calculation.
+            unique_retrieved = list(dict.fromkeys(retrieved))
+            matched = expected & set(unique_retrieved)
             ranks = [index for index, document in enumerate(retrieved, start=1) if document in expected]
             if ranks:
-                hits += 1
+                any_document_hits += 1
                 reciprocal += 1 / ranks[0]
+            if expected.issubset(unique_retrieved):
+                complete_hits += 1
+            expected_document_hits += len(matched)
+            expected_document_total += len(expected)
+            retrieved_document_hits += len(matched)
+            retrieved_document_total += len(unique_retrieved)
         rows.append({
             "k": k,
-            "recall": f"{hits}/{len(graded)} ({hits / len(graded):.0%})",
+            "recall": f"{any_document_hits}/{len(graded)} ({any_document_hits / len(graded):.0%})",
+            "expected_document_recall": (
+                f"{expected_document_hits}/{expected_document_total} "
+                f"({_safe_ratio(expected_document_hits, expected_document_total):.0%})"
+            ),
+            "complete_coverage": f"{complete_hits}/{len(graded)} ({complete_hits / len(graded):.0%})",
+            "document_precision": (
+                f"{retrieved_document_hits}/{retrieved_document_total} "
+                f"({_safe_ratio(retrieved_document_hits, retrieved_document_total):.0%})"
+            ),
             "mrr": round(reciprocal / len(graded), 3),
         })
     return rows

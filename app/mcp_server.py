@@ -64,5 +64,15 @@ def create_mock_hr_ticket(
     return data.create_ticket(employee_id, summary, category)
 
 
-if __name__ == "__main__":
+def run_stdio() -> None:
+    """Warm selected RAG resources, then serve the real stdio MCP transport."""
+    # The MCP child, rather than the FastAPI parent, owns the optional dense
+    # encoder.  It finishes index/model readiness before the stdio handshake,
+    # so /health cannot report a usable tool service while the model is still
+    # downloading or warming.
+    rag.ensure_ready()
     mcp.run(transport="stdio")
+
+
+if __name__ == "__main__":
+    run_stdio()

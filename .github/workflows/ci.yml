@@ -22,8 +22,8 @@ jobs:
       - name: Import check
         run: python -c "from app.main import app; print(app.title)"
 
-      - name: Build the policy index
-        run: python -c "from app.rag import build_index; print(len(build_index()['chunks']), 'chunks indexed')"
+      - name: Build the lexical policy index
+        run: RAG_BACKEND=lexical python scripts/build_rag_index.py
 
       - name: Unit, RAG and MCP tests
         run: python -m pytest -q

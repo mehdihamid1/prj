@@ -18,6 +18,23 @@ def test_mcp_discovers_required_tools():
     assert REQUIRED_TOOLS <= names
 
 
+def test_stdio_server_warms_rag_before_accepting_protocol_messages(monkeypatch):
+    """Dense model memory stays in the MCP child, not the FastAPI parent."""
+    from app import mcp_server
+
+    calls: list[str] = []
+    monkeypatch.setattr(mcp_server.rag, "ensure_ready", lambda: calls.append("rag-ready"))
+    monkeypatch.setattr(
+        mcp_server.mcp,
+        "run",
+        lambda *, transport: calls.append(f"mcp:{transport}"),
+    )
+
+    mcp_server.run_stdio()
+
+    assert calls == ["rag-ready", "mcp:stdio"]
+
+
 def test_discovered_tools_expose_usable_schemas():
     """The planner builds its tool definitions from these schemas, so they must be complete."""
     tools = asyncio.run(discover_tools())
