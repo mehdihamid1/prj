@@ -84,6 +84,20 @@ RECORD_TOOLS = READ_RECORD_TOOLS | MOCK_WRITE_TOOLS
 TRACE_PREVIEW_ITEMS = 4
 TRACE_PREVIEW_CHARS = 240
 MAX_FINAL_CITATIONS = 4
+# A document the answer never names by title or section can still be the source
+# of a large part of it. Requiring the model to name every source cost citation
+# recall on exactly the compound questions the corpus is built for: a correct
+# answer covering remote work *and* device security cited only the first.
+#
+# The discriminator is the share of a retrieved section's distinctive terms that
+# reappear in the answer, not the raw count. Measured on the deployed run that
+# exposed this: the wrongly-dropped data-security section shared 27 terms at a
+# ratio of .40, while an unused onboarding section shared a comparable 25 terms
+# at .27. The count cannot separate them; the ratio can. An unrelated answer
+# sits near .04. The absolute floor keeps a very short section from clearing the
+# ratio on a handful of incidental words.
+MIN_SUPPORTING_TERM_RATIO = 0.35
+MIN_SUPPORTING_TERM_OVERLAP = 8
 _CITATION_TOKEN_RE = re.compile(r"[a-z0-9]{2,}")
 _CITATION_STOP_TERMS = frozenset({
     "about", "after", "before", "between", "clearhr", "company", "document", "employee",
@@ -308,6 +322,8 @@ def _select_final_citations(
         section_mentioned = bool(section and section_is_specific and section in answer_normalised)
         title_mentioned = _title_is_mentioned(candidate["title"], answer_normalised)
         overlap = len(answer_terms & candidate["terms"])
+        candidate["overlap"] = overlap
+        candidate["term_ratio"] = overlap / max(len(candidate["terms"]), 1)
         ranked = (
             int(section_mentioned),
             int(title_mentioned),
@@ -332,7 +348,21 @@ def _select_final_citations(
     # If the model failed to name its source, retain only the strongest returned
     # evidence instead of reinstating every search hit.
     named = [item for item in ordered if item[0][0] or item[0][1]]
+    # Evidence the answer clearly used without naming it. Ranked by ratio so the
+    # most heavily used section of each document is the one cited.
+    supporting = sorted(
+        (
+            item for item in ordered
+            if item not in named
+            and item[1]["term_ratio"] >= MIN_SUPPORTING_TERM_RATIO
+            and item[1]["overlap"] >= MIN_SUPPORTING_TERM_OVERLAP
+        ),
+        key=lambda item: item[1]["term_ratio"],
+        reverse=True,
+    )
     if not named:
+        if supporting:
+            return [supporting[0][1]["citation"]]
         return [ordered[0][1]["citation"]]
 
     selected: list[dict[str, Any]] = []
@@ -346,7 +376,20 @@ def _select_final_citations(
         if len(selected) >= MAX_FINAL_CITATIONS:
             return selected
 
-    # Once each directly named document has one supporting section, include a
+    # Then documents the answer demonstrably drew on without naming. Document
+    # coverage comes before extra detail from an already-cited document, because
+    # a compound answer that cites only one of its two sources is the failure
+    # this pass exists to prevent.
+    for _ranked, candidate in supporting:
+        document = candidate["citation"]["document"]
+        if document in selected_documents:
+            continue
+        selected.append(candidate["citation"])
+        selected_documents.add(document)
+        if len(selected) >= MAX_FINAL_CITATIONS:
+            return selected
+
+    # Once each contributing document has one supporting section, include a
     # small amount of additional named detail, never the entire search output.
     for ranked, candidate in named:
         if not ranked[0]:

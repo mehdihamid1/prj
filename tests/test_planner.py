@@ -898,3 +898,86 @@ def test_refusal_names_the_country_the_user_asked_about():
 
     assert agent._named_jurisdiction("statutory entitlement in France?") == "France"
     assert agent._named_jurisdiction("legal minimum in Japan?") == "Japan"
+
+
+def _candidate(document, section, text, rank=0, support=0.5, score=0.7):
+    item = {
+        "id": f"{document}-{rank}", "document": document, "section": section,
+        "title": document.rsplit(".", 1)[0].replace("_", " ").title(),
+        "text": text, "support": support, "score": score,
+    }
+    candidate = planner._citation_candidate(item, "search_policy_documents", rank)
+    assert candidate is not None
+    return candidate
+
+
+def test_a_document_the_answer_used_but_never_named_is_still_cited():
+    """Compound answers cite every source they drew on, not only the ones named.
+
+    Requiring the model to name each source cost citation recall on exactly the
+    multi-policy questions this corpus exists for: a correct answer covering
+    remote work and device security cited only the remote-work policy.
+    """
+    answer = (
+        "Working from Portugal needs written approval from People Operations, Security, "
+        "Payroll and your vice president under the Remote Work Policy, requested six weeks "
+        "before departure. You must use company-managed equipment with full-disk encryption, "
+        "multi-factor authentication and the approved VPN, and must not copy company data to "
+        "personal cloud storage, email or removable media."
+    )
+    candidates = [
+        _candidate(
+            "remote_work_policy.md", "International Work",
+            "Working from another country requires written approval from People Operations, "
+            "Security, Payroll and the employee's vice president at least six weeks before "
+            "departure. A partial approval set is insufficient.",
+        ),
+        _candidate(
+            "data_security_policy.html", "Devices",
+            "Employees must use company-managed equipment with full-disk encryption, "
+            "multi-factor authentication and the approved VPN. Do not copy company data to "
+            "personal cloud storage, email or removable media.", rank=1,
+        ),
+    ]
+
+    cited = {c["document"] for c in planner._select_final_citations(answer, candidates)}
+    assert cited == {"remote_work_policy.md", "data_security_policy.html"}
+
+
+def test_a_retrieved_document_the_answer_did_not_use_is_not_cited():
+    """The recall pass must not reinstate every search hit; that was the old defect."""
+    answer = (
+        "Planned paid time off needs at least five calendar days of notice under the PTO Policy, "
+        "and your manager approves it based on coverage."
+    )
+    candidates = [
+        _candidate(
+            "pto_policy.md", "Request and Approval",
+            "Employees should submit planned PTO requests at least five calendar days before the "
+            "first day away. The manager approves requests based on coverage.",
+        ),
+        _candidate(
+            "onboarding_policy.md", "First Week",
+            "New employees complete identity verification, security awareness training, benefits "
+            "enrolment and equipment acknowledgement during the first week, and managers schedule "
+            "role training and introductions with the wider delivery team.", rank=1,
+        ),
+    ]
+
+    cited = {c["document"] for c in planner._select_final_citations(answer, candidates)}
+    assert cited == {"pto_policy.md"}
+
+
+def test_a_short_section_cannot_clear_the_ratio_on_incidental_words():
+    """The absolute floor stops a tiny chunk scoring a high ratio by coincidence."""
+    answer = "Expense claims need itemised receipts at or above twenty five dollars."
+    candidates = [
+        _candidate(
+            "expense_policy.md", "Allowable Expenses",
+            "Itemised receipts are required for expenses at or above twenty five dollars.",
+        ),
+        _candidate("holidays_and_schedules.txt", "Floating Holidays", "Receipts vary.", rank=1),
+    ]
+
+    cited = {c["document"] for c in planner._select_final_citations(answer, candidates)}
+    assert "holidays_and_schedules.txt" not in cited

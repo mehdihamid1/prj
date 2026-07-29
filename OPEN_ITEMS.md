@@ -5,16 +5,22 @@ a live host, or human review. It prevents a local deterministic test run—or an
 old public evaluation—from being presented as evidence about a newer planner
 revision.
 
-## Verified: live LLM planner and lexical-runtime public HTTP evaluation
+## Verified: live LLM planner and dense-runtime public HTTP evaluation
 
-Render is the submitted host. Its `/health` endpoint and 29-case public HTTP
-evaluation are recorded in `deployed.md`, `evaluation/results.md`, and
-`evaluation/artifacts.json`. The artifacts show real `planner: "llm"` responses
-alongside deterministic safety-gate responses; they are not a fallback-only
-test. The report deliberately labels that mixture rather than calling every
-case an LLM decision. That run predates `94639a7`: the parent was configured
-for dense retrieval but the MCP child used lexical retrieval, so it is not
-dense-RAG evidence.
+Render is the submitted host. Its child-owned `/health` response, three
+sequential 29-case public HTTP evaluation, and retained per-case artifacts are
+recorded in `deployed.md`, `evaluation/results.md`, and
+`evaluation/artifacts.json`. Before evaluation, the harness required
+`rag_status_source: mcp_child`, matching child/parent backend `dense`, and a
+loaded dense encoder. The three runs report a 69% median end-to-end pass rate
+(66%–79% observed range), 72% median answer-rubric accuracy (72%–83%), 93%
+citation precision in every run, and 100% HTTP success in every run.
+
+The artifacts show real `planner: "llm"` responses alongside deterministic
+safety-gate responses; they are not a fallback-only test. The report
+deliberately labels that mixture rather than calling every case an LLM decision.
+The earlier 66% single-run result predates `94639a7` and is retained only as a
+historical lexical-MCP-child baseline, not as dense-RAG evidence.
 
 The committed default is `gpt-5.6-luna`. A response proves that an LLM planner
 ran, but it does not by itself prove the exact host model override or deployed
@@ -38,42 +44,22 @@ The remote mode records HTTP status and client-observed latency but correctly
 does not claim remote citation IDs resolve to the local index. Review failures;
 do not weaken an answer rubric merely to inflate a score.
 
-## Blocking: deploy and verify dense retrieval, then repeat public evaluation
+## Open: dense-host resource measurement
 
-The current report is a 29-case lexical MCP-child runtime baseline. It must not
-be presented as evidence for dense end-to-end performance. Deploy the current
-revision, then require `/health` to show `rag_status_source: mcp_child`,
-matching child `rag_backend: dense`, parent `configured_rag_backend: dense`,
-and `dense_encoder_loaded: true`.
-Only then run the three sequential public HTTP evaluations and replace the
-report/artifacts with median/min–max dense results. Record one cold request
-after Render inactivity in `deployed.md` as part of that deployment evidence.
-
-The MCP stdio subprocess is started once at service boot rather than per
-request, so its ~0.6 s process-start cost is paid at startup and not on every
-call. Measured locally: cold boot to a healthy `/health` is **1.7 s** against
-Railway's 60 s `healthcheckTimeout`; warm `/health` is **~3 ms**. What is still
-unmeasured in public is the host's wake-from-idle time and real LLM latency.
-
-## Blocking: finish dense-host resource measurement
-
-The Render configuration requests `RAG_BACKEND=dense` with local FastEmbed
-`BAAI/bge-small-en-v1.5` vectors and a versioned `data/index.dense.json` store,
-but it must redeploy the current revision before the MCP child can be considered dense.
-The local retriever comparison in
+The submitted Render service intentionally uses `RAG_BACKEND=dense`; local/CI
+and the unverified Railway path intentionally retain lexical retrieval. The
+local retriever comparison in
 [`evaluation/dense_rag_comparison.md`](evaluation/dense_rag_comparison.md)
 improves default-k expected-document recall from 64% to 82% and complete
-required-document coverage from 60% to 80%. Those are **local retrieval**
-results only. The current public HTTP report is lexical-child evidence; the
-verified dense public evaluation is still pending.
+required-document coverage from 60% to 80%. Those are local retrieval results,
+not a claim about every end-to-end answer.
 
-Dense Python-3.11 `ensure_ready()` plus one query measured 292,932 KB maximum RSS locally.
-Render's dense build succeeded, but its pre-fix HTTP evaluation was lexical at
-runtime; total host RSS and wake-from-idle cold boot/warm latency remain
-unmeasured on the 512 MB free service. Follow `DEPLOYMENT_GUIDE.md` to record
-them after the fixed deployment. Set
-`RAG_BACKEND=lexical` to roll back without code or data migration if the host
-limit is approached.
+Dense Python-3.11 `ensure_ready()` plus one query measured 292,932 KB maximum
+RSS locally. The child-side dense backend and public evaluation are verified,
+but total Render host RSS and wake-from-idle cold-start latency remain
+unmeasured on the 512 MB free service. Record those before making a free-tier
+resource claim. Set `RAG_BACKEND=lexical` to roll back without code or data
+migration if the host limit is approached.
 
 ## Blocking: share the repository with the grader
 
@@ -119,7 +105,8 @@ and record the method and score in `evaluation/results.md`.
 
 - 14 synthetic policy documents in Markdown, HTML, and TXT; roughly 15,969
   words (about 32 standard manuscript pages).
-- Six FastMCP tools. The deployed agent uses a real stdio MCP handshake,
+- Seven FastMCP tools: six agent capabilities plus one health-only retrieval
+  diagnostic. The deployed agent uses a real stdio MCP handshake,
   discovery, and `call_tool` requests; CI runs an independent stdio check.
 - 29 evaluation cases covering policy, multi-document, workflow, ambiguity,
   safety, confirmation, and out-of-scope requests.

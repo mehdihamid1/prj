@@ -53,7 +53,18 @@ Retrieval has two versioned, interchangeable local backends with the same chunk 
 - `RAG_BACKEND=lexical` — the deterministic sparse IDF/hash index, the safe local/CI default and rollback path.
 - `RAG_BACKEND=dense` — FastEmbed's local `BAAI/bge-small-en-v1.5` model creates 384-dimensional BGE vectors and stores them in `data/index.dense.json`; the small corpus is searched by in-process cosine rather than an unnecessary external database service.
 
-The host build creates the selected index. At runtime, only the persistent MCP subprocess loads the optional dense model, preventing a duplicate model copy in the FastAPI parent. The trace preserves all returned evidence; the final citation list is deliberately limited to chunks that directly support the answer. Commit `94639a7` forwards a narrow, non-secret retrieval-settings allow-list to that child; the current revision adds a child-owned retrieval-status diagnostic to `/health`. Render must deploy the current revision and verify child-side dense retrieval before its public evaluation can be presented as dense evidence; the recorded 29-case result is a lexical-runtime baseline. Lexical remains the local/CI default and one-variable rollback path.
+### Intentional backend policy
+
+The backend is selected by execution context, rather than forcing dense RAG everywhere:
+
+| Context | Selected backend | Reason |
+| --- | --- | --- |
+| Submitted Render service | `dense` | The Blueprint pins it after a child-side health check and a three-run deployed evaluation verified the dense MCP child. |
+| Local setup, `.env.example`, and GitHub Actions | `lexical` | Deterministic, fast, and independent of an embedding-model download or dense-model memory use. |
+| Railway guide/configuration | `lexical` until separately verified | Railway is not the submitted host; dense should be enabled there only for a measured deployment trial. |
+| Host test phase | `lexical` | The selected production index is built first; the test command is then deliberately hermetic. |
+
+The host build creates the selected index. At runtime, only the persistent MCP subprocess loads the optional dense model, preventing a duplicate model copy in the FastAPI parent. The `RAG_BACKEND=lexical` prefix at the end of the host build command applies only to `pytest`; it does **not** switch the preceding `scripts/build_rag_index.py` step or the Render runtime back to lexical. The trace preserves all returned evidence; the final citation list is deliberately limited to chunks that directly support the answer. Commit `94639a7` forwards a narrow, non-secret retrieval-settings allow-list to that child, and the current revision adds a child-owned retrieval-status diagnostic to `/health`. The current Render health response proves `rag_status_source: "mcp_child"`, `rag_backend: "dense"`, and `dense_encoder_loaded: true`; [evaluation/results.md](evaluation/results.md) records the corresponding three-run dense deployment evaluation. Lexical remains the local/CI default and one-variable rollback path.
 
 ## MCP tools
 
@@ -85,7 +96,10 @@ python scripts/mcp_check.py         # stdio MCP discovery, child status, and two
 RAG_BACKEND=dense python scripts/build_rag_index.py  # build/cache dense local vectors
 ```
 
-GitHub Actions runs all of the above on push and pull request.
+GitHub Actions runs the lint, import, lexical-index build, full test suite,
+app-start smoke test, and MCP protocol check on every push and pull request.
+The dense build is selected explicitly for a dense host or local trial rather
+than imposed on every CI run.
 
 ## Deployment: Render or Railway
 
@@ -94,7 +108,7 @@ Configured for either platform as a **single web service**, with no database and
 - **Render** — *New → Blueprint*, select this repository. [render.yaml](render.yaml) declares the runtime, build and start commands, free plan, and `/health` check.
 - **Railway** — create a project from the repository. [railway.toml](railway.toml) configures Railpack, the same build command, and the health check. Generate a public domain after the first successful deploy.
 
-Deployment is gated by the host build command, which creates the configured RAG index and runs `python -m pytest -q` — a failing test fails the build, and a failed build never replaces the running service. On Render, [render.yaml](render.yaml) additionally uses `autoDeployTrigger: checksPass`, so automatic deploys wait for GitHub checks; Railway uses the tested host build as its in-host gate. Set `OPENAI_API_KEY` in the host's environment-variable settings only; never commit it. Leave `OPENAI_MODEL` unset so the cost-sensitive `gpt-5.6-luna` default applies, or set it explicitly to the same value. The running app launches and calls its MCP server over stdio, even in the single-service deployment. `/health` returns HTTP 503 if that MCP connection is unavailable **or** if the web parent and MCP child disagree on the backend. Its `rag_backend` comes from the child-owned `get_retrieval_status` MCP call, while `configured_rag_backend` shows the parent setting and `rag_status_source: "mcp_child"` proves this newer health contract is deployed. Use `RAG_BACKEND=lexical` by default. Set `RAG_BACKEND=dense` only for the documented measured trial: the build then downloads/caches the local model and the MCP child warms it before `/health` becomes ready.
+Deployment is gated by the host build command, which creates the configured RAG index and runs `python -m pytest -q` — a failing test fails the build, and a failed build never replaces the running service. On Render, [render.yaml](render.yaml) additionally uses `autoDeployTrigger: checksPass`, so automatic deploys wait for GitHub checks; Railway uses the tested host build as its in-host gate. Set `OPENAI_API_KEY` in the host's environment-variable settings only; never commit it. Leave `OPENAI_MODEL` unset so the cost-sensitive `gpt-5.6-luna` default applies, or set it explicitly to the same value. The running app launches and calls its MCP server over stdio, even in the single-service deployment. `/health` returns HTTP 503 if that MCP connection is unavailable **or** if the web parent and MCP child disagree on the backend. Its `rag_backend` comes from the child-owned `get_retrieval_status` MCP call, while `configured_rag_backend` shows the parent setting and `rag_status_source: "mcp_child"` proves this newer health contract is deployed. The submitted Render service intentionally uses dense RAG; local/CI and the unverified Railway path intentionally retain lexical as the dependency-light default and rollback.
 
 `/chat` also has a small process-local cost guard by default (30 requests per client and 60 total per 60 seconds). It is suitable for a one-instance coursework demo, not a replacement for authentication, an edge rate limiter, or a production privacy review.
 
@@ -121,8 +135,8 @@ python -m evaluation.run_eval --base-url https://your-service.example --runs 3 \
       `design-and-evaluation.md`, `ai-tooling.md`, `deployed.md`, `evaluation/`,
       `mock_data/`, and `mcp/` documentation/tool definitions
 - [x] Deploy and record the live URL and `/health` URL in [deployed.md](deployed.md)
-- [x] Run and commit a 29-case live-LLM HTTP evaluation against Render (lexical MCP-child baseline)
-- [ ] Deploy `94639a7`, verify dense retrieval in the MCP child, then re-run and commit the public evaluation
+- [x] Verify dense retrieval in the Render MCP child and commit the three-run
+      live-LLM HTTP evaluation (median and observed range retained)
 - [ ] Share the repository with the `quantic-grader` GitHub account
 - [ ] Record the 7–10 minute demo: two agentic tasks end to end, narrating tool names, arguments, outputs, citations, and the final answer, then a walkthrough of design, deployment, CI/CD, and evaluation
 - [ ] Submit through the course dashboard. For a group, one member submits on behalf of

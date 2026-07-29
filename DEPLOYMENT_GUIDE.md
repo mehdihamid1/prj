@@ -4,7 +4,11 @@ Choose **one** platform for the final project. Both options deploy the same sing
 
 Before starting, push this project to GitHub. Do not commit `.env` files or API keys. The app can run in deterministic fallback mode with no secret, but the graded LLM demo requires `OPENAI_API_KEY` as a host-only environment variable. The committed default is `OPENAI_MODEL=gpt-5.6-luna`; make sure the funded API project behind the key has access to it. In LLM mode, use only the repository's synthetic data because the prompt and relevant tool results are sent to OpenAI.
 
-`RAG_BACKEND=lexical` is the safe default. The optional `dense` setting uses a local FastEmbed BGE model; its build downloads about 65 MB of model files and the matching Python-3.11 local process measurement reached about 293 MB RSS. Do **not** enable dense on the submitted free host until you have completed the explicit dense trial below. It is not a secret and is immediately reversible by setting it back to `lexical`.
+### RAG backend policy
+
+`RAG_BACKEND=lexical` is the code, local-development, and CI default. It keeps ordinary tests deterministic and avoids an embedding-model download or dense-model memory use. The submitted Render Blueprint intentionally sets `RAG_BACKEND=dense`: its local FastEmbed BGE model downloads about 65 MB of files, and the corresponding Python-3.11 MCP process measured about 293 MB RSS. That choice is supported by a child-owned `/health` check and a three-run deployed evaluation, not merely by the Render environment value or build log.
+
+Railway remains configured and documented as `lexical` because it is not the submitted host and has not completed the same dense resource trial. If Railway becomes the final host, set `RAG_BACKEND=dense` **before** its build, then verify `/health` reports `rag_status_source: "mcp_child"`, matching `rag_backend: "dense"` / `configured_rag_backend: "dense"`, and `dense_encoder_loaded: true`. In every context, changing back to `lexical` is a one-variable rollback.
 
 The committed configuration was checked against the current official [Render
 Blueprint reference](https://render.com/docs/blueprint-spec) and [Railway
@@ -36,6 +40,11 @@ and commands below rather than relying on an old screenshot.
    Render deploy waits for the linked branch's GitHub checks before its own
    build reruns the tests.
 
+   The `RAG_BACKEND=lexical` suffix in the build command scopes only the
+   `pytest` process. `scripts/build_rag_index.py` runs first and inherits the
+   Blueprint's `RAG_BACKEND=dense`, so Render builds the dense index and serves
+   dense retrieval while tests retain the deterministic lexical backend.
+
 6. Click **Apply** / **Create Blueprint** and watch the deployment log. The build must finish with passing tests before Render starts the web service.
 7. In the service's **Environment** settings, add `OPENAI_API_KEY`. Leave `OPENAI_MODEL` unset so the committed `gpt-5.6-luna` default applies, or set it explicitly to `gpt-5.6-luna`. The submitted `render.yaml` pins `RAG_BACKEND=dense` so the build and runtime agree. To roll back, change that Blueprint value to `lexical` and rebuild; do not rely on a conflicting environment-group value. Do not point a shared service at a costlier model: every collaborator's request is billed to the deployment owner's account. Do not put secrets in `render.yaml`, a commit, or a screenshot. The default 60-second demo guard is 30 requests per client and 60 total; adjust its `CHAT_RATE_*` variables only if you understand the cost/privacy trade-off.
 8. When the service is live, copy its public `https://...onrender.com` URL. Open `<service-url>/health`; it must return HTTP 200 with `"status": "ok"`, `"mcp_connected": true`, `"rag_status_source": "mcp_child"`, and matching `"rag_backend"` / `"configured_rag_backend"` values. `rag_backend` is reported by the MCP child, not inferred from the web process. An HTTP 503 means the child is unavailable or its backend disagrees with the parent and must be fixed before recording the demo.
@@ -58,7 +67,7 @@ If Render does not detect the Blueprint, create **New** → **Web Service** and 
    | Health check path | `/health` |
    | Health check timeout | 60 seconds |
 
-4. In the service's **Variables** settings, add `OPENAI_API_KEY` and set `RAG_BACKEND=lexical`. Leave `OPENAI_MODEL` unset so the committed `gpt-5.6-luna` default applies, or set it explicitly to `gpt-5.6-luna`. Do not point a shared service at a costlier model: every collaborator's request is billed to the deployment owner's account. Do not put secrets in `railway.toml`, a commit, or a screenshot. The default 60-second demo guard is 30 requests per client and 60 total; adjust its `CHAT_RATE_*` variables only if you understand the cost/privacy trade-off.
+4. In the service's **Variables** settings, add `OPENAI_API_KEY` and set `RAG_BACKEND=lexical`. This is intentional for an unverified Railway deployment: it keeps its build and runtime dependency-light. Leave `OPENAI_MODEL` unset so the committed `gpt-5.6-luna` default applies, or set it explicitly to `gpt-5.6-luna`. If Railway becomes the final host, set `RAG_BACKEND=dense` before rebuilding and complete the child-side `/health` verification in step 7 before claiming dense RAG. Do not point a shared service at a costlier model: every collaborator's request is billed to the deployment owner's account. Do not put secrets in `railway.toml`, a commit, or a screenshot. The default 60-second demo guard is 30 requests per client and 60 total; adjust its `CHAT_RATE_*` variables only if you understand the cost/privacy trade-off.
 5. Start the deployment and watch the logs. Do not change `PORT`; Railway supplies it automatically.
 6. After a successful deployment, open the service’s **Settings** → **Networking** and choose **Generate Domain**.
 7. Open `<railway-domain>/health`. It must return HTTP 200 with `"status": "ok"`, `"mcp_connected": true`, `"rag_status_source": "mcp_child"`, and matching child `"rag_backend"` / parent `"configured_rag_backend"`; HTTP 503 means the MCP child is not usable yet or its backend is mismatched.
@@ -76,7 +85,7 @@ If Render does not detect the Blueprint, create **New** → **Web Service** and 
      --deployment-model gpt-5.6-luna
    ```
 
-   Record the generated median/min–max repeated-run results in `evaluation/results.md`. The artifact retains every run, rather than selecting the best. This is HTTP latency from the evaluation client; separately record one cold request after inactivity in `deployed.md`.
+   This command is correct for the submitted dense Render service. For an intentionally lexical deployment, use `--require-rag-backend lexical` instead. Record the generated median/min–max repeated-run results in `evaluation/results.md`. The artifact retains every run, rather than selecting the best. This is HTTP latency from the evaluation client; separately record one cold request after inactivity in `deployed.md`.
 3. Confirm GitHub Actions is green on the deployed branch. Render automatic
    deploys wait for those checks through `autoDeployTrigger: checksPass`;
    Railway's equivalent protection in this repository is its host build command
@@ -88,7 +97,7 @@ If Render does not detect the Blueprint, create **New** → **Web Service** and 
 
 1. Confirm the build log includes `"backend": "dense"`, then deploy the current revision and open `/health`. It must return HTTP 200 with `"rag_status_source": "mcp_child"`, child `"rag_backend": "dense"`, matching `"configured_rag_backend": "dense"`, and `"dense_encoder_loaded": true`. A build log or a parent-only setting is not sufficient proof. The MCP child must become ready within the host's 60-second health window.
 2. Record boot-to-`/health`, first `/chat` after sleep, warm latency, and total service memory if the host exposes it. Run the local retrieval ablation and the three-run public HTTP evaluation after that child-side verification; write those results to the repository before claiming dense improvement.
-3. If a health check fails, cold start is impractical, or memory approaches the plan limit, change the Blueprint value to `RAG_BACKEND=lexical` and redeploy. No data migration or code rollback is needed because the two indexes use separate files and preserve the MCP schema.
+3. If a health check fails, cold start is impractical, or memory approaches the plan limit, change the selected host's `RAG_BACKEND` value to `lexical` and redeploy. No data migration or code rollback is needed because the two indexes use separate files and preserve the MCP schema.
 
 ## If the deployment fails
 
