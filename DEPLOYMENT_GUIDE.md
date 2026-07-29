@@ -31,7 +31,7 @@ and commands below rather than relying on an old screenshot.
    build reruns the tests.
 
 6. Click **Apply** / **Create Blueprint** and watch the deployment log. The build must finish with passing tests before Render starts the web service.
-7. In the service's **Environment** settings, add `OPENAI_API_KEY`. Set `OPENAI_MODEL=gpt-5.6-luna` if the service already has an older model override; otherwise the committed default applies. Do not put either in `render.yaml`, a commit, or a screenshot. The default 60-second demo guard is 30 requests per client and 60 total; adjust its `CHAT_RATE_*` variables only if you understand the cost/privacy trade-off.
+7. In the service's **Environment** settings, add `OPENAI_API_KEY`. Leave `OPENAI_MODEL` unset so the committed `gpt-5.6-luna` default applies, or set it explicitly to `gpt-5.6-luna`. Do not point a shared service at a costlier model: every collaborator's request is billed to the deployment owner's account. Do not put either in `render.yaml`, a commit, or a screenshot. The default 60-second demo guard is 30 requests per client and 60 total; adjust its `CHAT_RATE_*` variables only if you understand the cost/privacy trade-off.
 8. When the service is live, copy its public `https://...onrender.com` URL. Open `<service-url>/health`; it must return HTTP 200 with JSON `"status": "ok"` and `"mcp_connected": true`. An HTTP 503 means the local MCP child is unavailable and must be fixed before recording the demo.
 9. Open the root URL and submit the PTO demo request: “Can I take three days of PTO next week?” with employee ID `E1001`. Confirm the response reports `planner: "llm"` before treating it as a live-LLM demo.
 10. Paste the public app and health URLs into [deployed.md](deployed.md). Note the time of the first request after inactivity as the cold-start observation.
@@ -52,7 +52,7 @@ If Render does not detect the Blueprint, create **New** → **Web Service** and 
    | Health check path | `/health` |
    | Health check timeout | 60 seconds |
 
-4. In the service's **Variables** settings, add `OPENAI_API_KEY`. Set `OPENAI_MODEL=gpt-5.6-luna` if the service already has an older model override; otherwise the committed default applies. Do not put either in `railway.toml`, a commit, or a screenshot. The default 60-second demo guard is 30 requests per client and 60 total; adjust its `CHAT_RATE_*` variables only if you understand the cost/privacy trade-off.
+4. In the service's **Variables** settings, add `OPENAI_API_KEY`. Leave `OPENAI_MODEL` unset so the committed `gpt-5.6-luna` default applies, or set it explicitly to `gpt-5.6-luna`. Do not point a shared service at a costlier model: every collaborator's request is billed to the deployment owner's account. Do not put either in `railway.toml`, a commit, or a screenshot. The default 60-second demo guard is 30 requests per client and 60 total; adjust its `CHAT_RATE_*` variables only if you understand the cost/privacy trade-off.
 5. Start the deployment and watch the logs. Do not change `PORT`; Railway supplies it automatically.
 6. After a successful deployment, open the service’s **Settings** → **Networking** and choose **Generate Domain**.
 7. Open `<railway-domain>/health`. It must return HTTP 200 with `"status": "ok"` and `"mcp_connected": true`; HTTP 503 means the MCP child is not usable yet.

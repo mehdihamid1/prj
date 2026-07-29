@@ -55,6 +55,13 @@ data, credentials, or internal company policy in this demo.
 - Keep one trusted deployment owner. That person enters `OPENAI_API_KEY` only
   in the chosen host's environment-variable settings and controls billing and
   the public deployment.
+- **Use `gpt-5.6-luna` on every shared deployment.** It is the committed default,
+  chosen to keep the demo cheap. Leave `OPENAI_MODEL` unset on Railway and
+  Render so that default applies, or set it explicitly to `gpt-5.6-luna`. A host
+  variable silently overrides the repository default, and every request against
+  a shared service is billed to the deployment owner — so switching a shared
+  deployment to a costlier model spends someone else's money. Test a different
+  model in your own `.env` with your own key instead.
 - The public demo has a process-local 60-second request guard (defaults: 30 per
   client, 60 total). It limits accidental cost on one instance but is **not**
   authentication, a web-application firewall, or a production privacy control.
