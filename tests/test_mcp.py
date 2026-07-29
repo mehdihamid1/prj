@@ -134,3 +134,39 @@ def test_session_survives_shutdown_then_restart():
         return result
 
     assert asyncio.run(scenario())["available_hours"] == 40
+
+
+def test_child_process_receives_the_retrieval_settings():
+    """The MCP SDK does not inherit the parent environment.
+
+    Retrieval runs in the child, so a host variable such as RAG_BACKEND must be
+    forwarded explicitly. Without it the parent reports one backend on /health
+    while the child answers from another index — a deployment can claim dense
+    and serve lexical.
+    """
+    from app import mcp_client
+
+    forwarded = mcp_client._server_environment()
+    assert {"PATH", "HOME"} <= set(forwarded), "the SDK's safe defaults must be preserved"
+    assert mcp_client._SERVER.env is not None, "the child must not fall back to a bare default env"
+
+
+def test_child_environment_follows_the_host_backend(monkeypatch):
+    monkeypatch.setenv("RAG_BACKEND", "dense")
+    monkeypatch.setenv("TOP_K", "7")
+
+    from app import mcp_client
+
+    forwarded = mcp_client._server_environment()
+
+    assert forwarded["RAG_BACKEND"] == "dense"
+    assert forwarded["TOP_K"] == "7"
+
+
+def test_provider_credential_is_not_forwarded_to_the_tool_process(monkeypatch):
+    """The child serves policy and synthetic records; it has no use for the API key."""
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-should-not-reach-the-child")
+
+    from app import mcp_client
+
+    assert "OPENAI_API_KEY" not in mcp_client._server_environment()

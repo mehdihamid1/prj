@@ -26,16 +26,41 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import sys
 from contextlib import asynccontextmanager, suppress
 from typing import Any, AsyncIterator
 
 from mcp import ClientSession, StdioServerParameters
-from mcp.client.stdio import stdio_client
+from mcp.client.stdio import get_default_environment, stdio_client
 
 from . import settings
 
 logger = logging.getLogger(__name__)
+
+
+def _server_environment() -> dict[str, str]:
+    """Forward the retrieval settings the MCP child needs, and nothing more.
+
+    The SDK does not inherit the parent environment. `get_default_environment()`
+    returns a minimal safe set (HOME, LOGNAME, PATH, SHELL, USER), so a host
+    variable such as `RAG_BACKEND` never reaches the child unless it is passed
+    explicitly. Retrieval runs *in the child*, so without this the parent can
+    report one backend on /health while the child serves another — the service
+    silently answers from the lexical index while the deployment claims dense.
+
+    The allow-list is deliberate rather than a copy of `os.environ`: the child
+    reads policy and synthetic records only, and has no use for the provider
+    credential. Not forwarding `OPENAI_API_KEY` keeps the key in the one process
+    that needs it.
+    """
+    environment = dict(get_default_environment())
+    for name in ("RAG_BACKEND", "RAG_MODEL", "RAG_MODEL_CACHE_DIR", "TOP_K", "MIN_SUPPORT"):
+        value = os.environ.get(name)
+        if value is not None:
+            environment[name] = value
+    return environment
+
 
 # `cwd` is pinned to the repository root rather than inherited. `python -m` puts
 # the working directory on sys.path, so inheriting a different start directory on
@@ -44,6 +69,7 @@ _SERVER = StdioServerParameters(
     command=sys.executable,
     args=["-m", "app.mcp_server"],
     cwd=str(settings.ROOT),
+    env=_server_environment(),
 )
 
 _task: asyncio.Task[None] | None = None
