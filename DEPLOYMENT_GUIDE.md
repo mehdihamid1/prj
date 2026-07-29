@@ -80,8 +80,8 @@ If Render does not detect the Blueprint, create **New** → **Web Service** and 
 
 ### Dense-RAG verification and rollback
 
-1. Confirm the build log includes `"backend": "dense"`, then verify `/health` and a policy query. The MCP child must become ready within the host's 60-second health window.
-2. Record boot-to-`/health`, first `/chat` after sleep, warm latency, and total service memory if the host exposes it. Run the local retrieval ablation and the 29-case public HTTP evaluation; write those results to the repository before claiming dense improvement.
+1. Confirm the build log includes `"backend": "dense"`, then verify `/health` and a controlled policy query. A build log and the parent `/health` field do not prove the MCP child is dense: deploy `94639a7` or later, then inspect child-side retrieval evidence (for example, the policy-query trace) before making that claim. The MCP child must become ready within the host's 60-second health window.
+2. Record boot-to-`/health`, first `/chat` after sleep, warm latency, and total service memory if the host exposes it. Run the local retrieval ablation and the 29-case public HTTP evaluation after that child-side verification; write those results to the repository before claiming dense improvement.
 3. If a health check fails, cold start is impractical, or memory approaches the plan limit, change the Blueprint value to `RAG_BACKEND=lexical` and redeploy. No data migration or code rollback is needed because the two indexes use separate files and preserve the MCP schema.
 
 ## If the deployment fails
