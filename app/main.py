@@ -14,7 +14,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field
 
-from . import mcp_client
+from . import mcp_client, settings
 from .agent import respond
 from .mcp_client import discover_tools
 
@@ -145,12 +145,24 @@ async def home() -> FileResponse:
 async def health():
     try:
         tools = await discover_tools()
-        return {"status": "ok", "mcp_connected": True, "mcp_tool_count": len(tools)}
+        # Report the retriever so the running backend can be confirmed directly
+        # rather than inferred from the score range in a /chat trace. The value
+        # is a non-secret deployment setting, not a credential.
+        return {
+            "status": "ok",
+            "mcp_connected": True,
+            "mcp_tool_count": len(tools),
+            "rag_backend": settings.rag_backend(),
+        }
     except Exception:
         logger.warning("Health check could not reach the MCP service")
         return JSONResponse(
             status_code=503,
-            content={"status": "unavailable", "mcp_connected": False},
+            content={
+                "status": "unavailable",
+                "mcp_connected": False,
+                "rag_backend": settings.rag_backend(),
+            },
             headers={"Cache-Control": "no-store"},
         )
 

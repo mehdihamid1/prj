@@ -19,7 +19,7 @@ ran, but it does not by itself prove the exact host model override or deployed
 commit. Keep the host variable and deployment revision in the presenter notes;
 never expose the API key.
 
-## Blocking: deploy each planner/safety revision and re-run the public evaluation
+## Required after each future planner/safety revision: re-run the public evaluation
 
 After a change to the planner, RAG, MCP tool policy, or safety gate, deploy the
 revision and run both the retrieval ablation and the public HTTP evaluation:
@@ -36,9 +36,9 @@ do not weaken an answer rubric merely to inflate a score.
 
 ## Blocking: finish public-service measurement
 
-The current report contains a warm 29-case public run. What remains is one
-cold request after Render inactivity and a fresh post-deploy run after the
-current guardrail revision. Record the cold observation in `deployed.md`.
+The current report contains the fresh post-dense 29-case public run. What
+remains is one cold request after Render inactivity. Record that observation in
+`deployed.md`.
 
 The MCP stdio subprocess is started once at service boot rather than per
 request, so its ~0.6 s process-start cost is paid at startup and not on every
@@ -46,23 +46,23 @@ call. Measured locally: cold boot to a healthy `/health` is **1.7 s** against
 Railway's 60 s `healthcheckTimeout`; warm `/health` is **~3 ms**. What is still
 unmeasured in public is the host's wake-from-idle time and real LLM latency.
 
-## Blocking: measure the opt-in dense RAG backend on the chosen host
+## Blocking: finish dense-host resource measurement
 
-The repository now implements `RAG_BACKEND=dense` with local FastEmbed
+The submitted Render service now runs `RAG_BACKEND=dense` with local FastEmbed
 `BAAI/bge-small-en-v1.5` vectors and a versioned `data/index.dense.json` store.
 The local retriever comparison in
 [`evaluation/dense_rag_comparison.md`](evaluation/dense_rag_comparison.md)
 improves default-k expected-document recall from 64% to 82% and complete
 required-document coverage from 60% to 80%. Those are **local retrieval**
-results only, not a deployed LLM-quality claim.
+results only, but the post-dense public HTTP evaluation is now recorded in
+`evaluation/results.md`.
 
-Dense Python-3.11 `ensure_ready()` plus one query measured 292,932 KB maximum RSS locally,
-so do not silently turn it on for the 512 MB free service. Follow the dense
-trial in `DEPLOYMENT_GUIDE.md`: first record a lexical baseline, set the
-non-secret `RAG_BACKEND=dense`, verify the build cache and `/health`, measure
-total host RSS/cold boot/warm latency, and re-run both the local ablation and
-the 29-case public HTTP evaluation. Set `RAG_BACKEND=lexical` to roll back
-without code or data migration if the host limit is approached.
+Dense Python-3.11 `ensure_ready()` plus one query measured 292,932 KB maximum RSS locally.
+Render's dense build and live HTTP evaluation succeeded, but total host RSS and
+wake-from-idle cold boot/warm latency remain unmeasured on the 512 MB free
+service. Follow `DEPLOYMENT_GUIDE.md` to record them. Set
+`RAG_BACKEND=lexical` to roll back without code or data migration if the host
+limit is approached.
 
 ## Blocking: share the repository with the grader
 

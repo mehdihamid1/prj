@@ -16,6 +16,15 @@ services:
       - key: PYTHONUNBUFFERED
         value: "1"
       - key: RAG_BACKEND
-        # Dense mode needs a measured host-memory/cold-start trial first.
-        # Change this to dense only for that explicit staging/deployment run.
-        value: lexical
+        # Declared here rather than left to a dashboard/global value so the
+        # repository states which retriever the deployed service runs. A
+        # service-level blueprint value also takes precedence over an
+        # environment-group one, so a global setting would be shadowed by this
+        # entry rather than overriding it.
+        #
+        # The build command above reads the same variable, so this selects both
+        # the index that gets built and the retriever that serves requests; the
+        # two must not disagree or the app starts without its index.
+        #
+        # Rollback is this one line back to `lexical`.
+        value: dense

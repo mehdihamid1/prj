@@ -33,7 +33,7 @@ and commands below rather than relying on an old screenshot.
    build reruns the tests.
 
 6. Click **Apply** / **Create Blueprint** and watch the deployment log. The build must finish with passing tests before Render starts the web service.
-7. In the service's **Environment** settings, add `OPENAI_API_KEY`. Leave `OPENAI_MODEL` unset so the committed `gpt-5.6-luna` default applies, or set it explicitly to `gpt-5.6-luna`. Keep `RAG_BACKEND=lexical` for the first deployment; `render.yaml` provides that non-secret default. Do not point a shared service at a costlier model: every collaborator's request is billed to the deployment owner's account. Do not put secrets in `render.yaml`, a commit, or a screenshot. The default 60-second demo guard is 30 requests per client and 60 total; adjust its `CHAT_RATE_*` variables only if you understand the cost/privacy trade-off.
+7. In the service's **Environment** settings, add `OPENAI_API_KEY`. Leave `OPENAI_MODEL` unset so the committed `gpt-5.6-luna` default applies, or set it explicitly to `gpt-5.6-luna`. The submitted `render.yaml` pins `RAG_BACKEND=dense` so the build and runtime agree. To roll back, change that Blueprint value to `lexical` and rebuild; do not rely on a conflicting environment-group value. Do not point a shared service at a costlier model: every collaborator's request is billed to the deployment owner's account. Do not put secrets in `render.yaml`, a commit, or a screenshot. The default 60-second demo guard is 30 requests per client and 60 total; adjust its `CHAT_RATE_*` variables only if you understand the cost/privacy trade-off.
 8. When the service is live, copy its public `https://...onrender.com` URL. Open `<service-url>/health`; it must return HTTP 200 with JSON `"status": "ok"` and `"mcp_connected": true`. An HTTP 503 means the local MCP child is unavailable and must be fixed before recording the demo.
 9. Open the root URL and submit the PTO demo request: “Can I take three days of PTO next week?” with employee ID `E1001`. Confirm the response reports `planner: "llm"` before treating it as a live-LLM demo.
 10. Paste the public app and health URLs into [deployed.md](deployed.md). Note the time of the first request after inactivity as the cold-start observation.
@@ -78,13 +78,11 @@ If Render does not detect the Blueprint, create **New** → **Web Service** and 
 4. Share the repository with GitHub account `quantic-grader`.
 5. Use the deployed URL in the recorded demo. For each task, show the returned MCP trace, tool arguments and outputs, citations, and final answer/action.
 
-### Optional dense-RAG trial (after the lexical deployment is stable)
+### Dense-RAG verification and rollback
 
-1. Record the lexical deployment's health, warm `/chat` latency, and one cold-start observation first; this is the rollback baseline.
-2. Change only the host variable `RAG_BACKEND` from `lexical` to `dense` and redeploy. The same build command will download/cache `BAAI/bge-small-en-v1.5` and write `data/index.dense.json` before tests run.
-3. Confirm the build log includes `"backend": "dense"`, then verify `/health` and a policy query. The MCP child must become ready within the host's 60-second health window.
-4. Measure boot-to-`/health`, first `/chat` after sleep, warm latency, and total service memory if the host exposes it. Run the local retrieval ablation and the 29-case public HTTP evaluation; write those results to the repository before claiming dense improvement.
-5. If a health check fails, cold start is impractical, or memory approaches the plan limit, set `RAG_BACKEND=lexical` and redeploy. No data migration or code rollback is needed because the two indexes use separate files and preserve the MCP schema.
+1. Confirm the build log includes `"backend": "dense"`, then verify `/health` and a policy query. The MCP child must become ready within the host's 60-second health window.
+2. Record boot-to-`/health`, first `/chat` after sleep, warm latency, and total service memory if the host exposes it. Run the local retrieval ablation and the 29-case public HTTP evaluation; write those results to the repository before claiming dense improvement.
+3. If a health check fails, cold start is impractical, or memory approaches the plan limit, change the Blueprint value to `RAG_BACKEND=lexical` and redeploy. No data migration or code rollback is needed because the two indexes use separate files and preserve the MCP schema.
 
 ## If the deployment fails
 

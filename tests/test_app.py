@@ -41,7 +41,12 @@ def test_health_returns_safe_503_when_mcp_is_unavailable(monkeypatch):
 
     assert isinstance(result, JSONResponse)
     assert result.status_code == 503
-    assert json.loads(result.body) == {"status": "unavailable", "mcp_connected": False}
+    body = json.loads(result.body)
+    assert body["status"] == "unavailable"
+    assert body["mcp_connected"] is False
+    # The degraded body may carry non-secret deployment facts such as the active
+    # retriever, but never the exception text, which can name internal detail.
+    assert set(body) <= {"status", "mcp_connected", "rag_backend"}
     assert b"internal-token-value" not in result.body
 
 
@@ -131,3 +136,23 @@ def test_demo_page_includes_an_accurate_workflow_map():
     assert "MCP client → FastMCP server" in page
     assert "Structured results return to the LLM" in page
     assert "final answer, citations, and exact MCP tool trace" in page
+
+
+def test_health_reports_the_active_rag_backend(monkeypatch):
+    """The deployed retriever must be checkable directly, not inferred from score ranges.
+
+    render.yaml pins RAG_BACKEND at service level for both the build and the
+    runtime; this endpoint is how a deploy is confirmed to be running the
+    backend the repository claims.
+    """
+    from fastapi.testclient import TestClient
+
+    from app import settings
+    from app.main import app
+
+    monkeypatch.setattr(settings, "rag_backend", lambda: "dense")
+    with TestClient(app) as client:
+        payload = client.get("/health").json()
+
+    assert payload["rag_backend"] == "dense"
+    assert payload["status"] == "ok"

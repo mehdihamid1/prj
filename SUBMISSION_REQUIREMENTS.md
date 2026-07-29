@@ -70,4 +70,4 @@ safety gate and the confirmation-required mock ticket.
 
 Everything not marked **done** above, plus the technical gaps tracked in
 [OPEN_ITEMS.md](OPEN_ITEMS.md) — chiefly the dense-RAG host memory/cold-start
-trial, the post-deploy evaluation rerun, and the remaining submission actions.
+measurement and the remaining submission actions.

@@ -183,7 +183,7 @@ Two properties are worth stating explicitly because the diagram makes them visib
 | CI | GitHub Actions | Required by the project brief |
 | Evaluation | pytest + a scoring harness | RAGAS and DeepEval — richer metrics, but add an LLM judge and dependency weight |
 
-The dense path is a real pretrained semantic embedding implementation, not a provider API call: FastEmbed runs BGE-small locally and persists the resulting vectors with citation metadata. It is deliberately not the default on a 512 MB free host until the full web-process-plus-MCP-child memory and cold-start trial is recorded. The lexical backend remains a tested one-variable rollback, so the project does not claim a production host result before measuring it.
+The dense path is a real pretrained semantic embedding implementation, not a provider API call: FastEmbed runs BGE-small locally and persists the resulting vectors with citation metadata. Render is configured for this path and has completed a successful dense build and public HTTP evaluation. The full web-process-plus-MCP-child memory and wake-from-idle cold-start trial are still outstanding on the 512 MB free host. The lexical backend remains a tested one-variable rollback.
 
 ## Corpus and ingestion
 
@@ -213,11 +213,11 @@ Chunking is a fixed 220-word window with a 190-word stride, applied within each 
 | Retrieval | `TOP_K = 4`, clamped to 1–8 at the tool boundary | The ablation variable |
 | Citations | Trace preserves every retrieved result; final citations select up to four directly named/supporting chunk `id`/`document`/`section`/snippet records | Demonstrates all MCP outputs while avoiding the misleading implication that every broad-search hit supports the answer |
 
-**Why the representation changed.** The first draft used 256 dense dimensions with unweighted term frequencies. That was adequate for a two-page corpus and collapsed at 15,969 words: hash collisions saturated the vectors and corpus-wide words such as *employee* and *policy* dominated every comparison, so top-1 document accuracy on a 13-question probe was 3/13. Adding IDF weighting, raising the hashing space, and weighting headings moved that to 10/13 top-1 and 13/13 top-3 while shrinking the index to 378 KB. The current revision also indexes document metadata so a policy name such as *Benefits* or *Data Security* contributes to retrieval; its deployment evaluation remains pending.
+**Why the representation changed.** The first draft used 256 dense dimensions with unweighted term frequencies. That was adequate for a two-page corpus and collapsed at 15,969 words: hash collisions saturated the vectors and corpus-wide words such as *employee* and *policy* dominated every comparison, so top-1 document accuracy on a 13-question probe was 3/13. Adding IDF weighting, raising the hashing space, and weighting headings moved that to 10/13 top-1 and 13/13 top-3 while shrinking the index to 378 KB. The current revision also indexes document metadata so a policy name such as *Benefits* or *Data Security* contributes to retrieval; its deployed dense HTTP evaluation is recorded in `evaluation/results.md`.
 
 **Measured dense comparison.** On the fixed 20 retrieval-labelled evaluation cases (28 expected document labels), dense retrieval at the default k=4 achieved 23/28 expected-document recall (82%), 16/20 complete required-document coverage (80%), 53% document precision, and .875 MRR. Lexical achieved 18/28 (64%), 12/20 (60%), 30%, and .775 respectively. The complete local table, commands, and resource observation are in [evaluation/dense_rag_comparison.md](evaluation/dense_rag_comparison.md). These are retriever-only local measurements—not a claim that the live LLM answer quality improved.
 
-**Known limitation.** A dense JSON vector index is intentionally lightweight rather than a named service such as Chroma or FAISS; for 142 chunks, brute-force cosine is materially simpler and faster than an extra vector-database process. The rubric may nevertheless prefer a named conventional vector store, so this trade-off is documented rather than hidden. Dense runtime RSS must also be measured on the submitted host before enabling it there; `RAG_BACKEND=lexical` remains the immediate rollback path.
+**Known limitation.** A dense JSON vector index is intentionally lightweight rather than a named service such as Chroma or FAISS; for 142 chunks, brute-force cosine is materially simpler and faster than an extra vector-database process. The rubric may nevertheless prefer a named conventional vector store, so this trade-off is documented rather than hidden. Dense runtime RSS and wake-from-idle cold start remain to be measured on the submitted host; `RAG_BACKEND=lexical` remains the immediate rollback path.
 
 ## MCP tools and schemas
 
@@ -284,7 +284,7 @@ The MCP stdio subprocess is the one component with a meaningful footprint, so it
 | Cold boot to healthy `/health` | 1.7 s | Railway `healthcheckTimeout = 60 s` |
 | Warm `/health` | ~3 ms | Probed on a schedule, so per-probe cost matters |
 | Lexical resident memory | ~49 MB parent + ~51 MB MCP child ≈ 100 MB | Well inside a 512 MB container |
-| Dense MCP process, local Python-3.11 `ensure_ready()` + query | 292,932 KB max RSS; model cache about 65 MB | Model is child-only, but total parent + child RSS and cold boot must be measured on the chosen 512 MB host before opt-in |
+| Dense MCP process, local Python-3.11 `ensure_ready()` + query | 292,932 KB max RSS; model cache about 65 MB | Model is child-only, but total parent + child RSS and cold boot remain to be measured on the chosen 512 MB host |
 | 20 concurrent tool calls | 23 ms, one child process | Memory is flat under concurrency |
 | Evaluation suite p50 / p95 | See the generated `evaluation/results.md` | A public Render HTTP run is recorded; re-run it after each deployed planner/safety revision |
 
@@ -350,7 +350,7 @@ Coverage by category: 8 single-policy, 6 workflow, 4 multi-document, 4 out-of-sc
 
 Groundedness is reported as an **automatic proxy**: it checks every required document, citation shape, and (in local mode) that citation IDs resolve to the local index. It does not check that the wording is faithful to that chunk, which needs human review. The harness labels it as a proxy rather than presenting it as the real measurement.
 
-**Current status.** `evaluation/results.md` records a 29-case public HTTP run against Render. Its `mixed` planner label is intentional: the artifacts include live `llm` responses and deterministic safety-gate responses, rather than falsely calling all 29 cases LLM decisions. It is a baseline, not a guarantee for later source changes; after deploying a planner, RAG, tool-policy, or safety revision, re-run the public harness and replace both the report and artifacts. The harness records the response planner but cannot infer a host's exact model override or deployed commit, so keep those non-secret deployment facts in the presentation notes.
+**Current status.** After Render's dense build on 2026-07-29, `evaluation/results.md` records a 29-case public HTTP run: 19/29 end-to-end passes (66%), 21/29 answer-rubric passes (72%), 26/28 citation precision (93%), and 29/29 HTTP success. Its `mixed` planner label is intentional: the artifacts include live `llm` responses and deterministic safety-gate responses, rather than falsely calling all 29 cases LLM decisions. It is a baseline, not a guarantee for later source changes; after deploying a planner, RAG, tool-policy, or safety revision, re-run the public harness and replace both the report and artifacts. The harness records the response planner but cannot infer a host's exact model override or deployed commit, so keep those non-secret deployment facts in the presentation notes.
 
 ## Demo walkthrough checklist
 

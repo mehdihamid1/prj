@@ -4,24 +4,24 @@ Mode: deployed HTTP: `https://clearhr-agentic-hr-assistant.onrender.com` · plan
 
 | Metric | Result |
 | --- | --- |
-| Behaviour accuracy | 25/29 (86%) |
-| Answer rubric accuracy | 15/29 (52%) |
-| End-to-end pass rate | 13/29 (45%) |
-| Citation document recall | 25/28 (89%) |
-| Citation document precision | 25/48 (52%) |
-| Citation complete required coverage | 17/20 (85%) |
-| Multi-document complete coverage | 2/5 (40%) |
+| Behaviour accuracy | 29/29 (100%) |
+| Answer rubric accuracy | 21/29 (72%) |
+| End-to-end pass rate | 19/29 (66%) |
+| Citation document recall | 26/28 (93%) |
+| Citation document precision | 26/28 (93%) |
+| Citation complete required coverage | 18/20 (90%) |
+| Multi-document complete coverage | 3/5 (60%) |
 | Citation structure valid | 29/29 (100%) |
 | Citation IDs resolve to local index | n/a |
-| Required-tool recall | 29/29 (100%) |
+| Required-tool recall | 28/29 (97%) |
 | Required-tool complete coverage | 28/29 (97%) |
 | Workflow completion | 9/18 (50%) |
 | Confirmation/action contract | 29/29 (100%) |
 | Confirmed mock-action completion | 1/1 (100%) |
-| Groundedness (automatic proxy) | 26/29 (90%) |
+| Groundedness (automatic proxy) | 27/29 (93%) |
 | HTTP success | 29/29 (100%) |
-| Latency p50 | 2711.7 ms |
-| Latency p95 | 6177.7 ms |
+| Latency p50 | 3114.3 ms |
+| Latency p95 | 8025.3 ms |
 
 Answer rubric accuracy requires the case's explicit required claims and the configured gold-reference term coverage. Citation coverage now requires **every** declared policy document, not just one document from a multi-policy question. Tool coverage similarly requires every declared tool but does not penalise legitimate additional safety tools.
 
@@ -35,32 +35,32 @@ In HTTP mode, citation IDs are not claimed to resolve unless the deployment expo
 
 | ID | Type | Expected | Observed | Answer | Docs r/p | Tools | Action | HTTP | ms |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| q01 | policy | answer_with_citation | answer | y | 100%/50% | y | y | 200 | 2635 |
-| q02 | policy | answer_with_citation | answer | y | 100%/50% | y | y | 200 | 2488 |
-| q03 | policy | answer_with_citation | answer | y | 50%/33% | y | y | 200 | 2907 |
-| q04 | policy | answer_with_citation | answer | y | 100%/33% | y | y | 200 | 2531 |
-| q05 | policy | answer_with_citation | answer | y | 100%/33% | y | y | 200 | 3079 |
-| q06 | policy | answer_with_citation | answer | n | 100%/33% | y | y | 200 | 3255 |
-| q07 | policy | answer_with_citation | answer | y | 100%/50% | y | y | 200 | 2783 |
-| q08 | policy | answer_with_citation | answer | n | 100%/33% | y | y | 200 | 2712 |
-| q09 | multi-document | answer_with_citation | answer | y | 50%/50% | y | y | 200 | 6278 |
-| q10 | multi-document | answer_with_citation | answer | n | 100%/100% | y | y | 200 | 6192 |
-| q11 | multi-document | answer_with_citation | answer | n | 67%/67% | y | y | 200 | 3305 |
-| q12 | multi-document | answer_with_citation | answer | y | 100%/75% | y | y | 200 | 3246 |
-| q13 | workflow | answer_with_citation_and_record | answer | n | 100%/100% | y | y | 200 | 3693 |
-| q14 | workflow | answer_with_citation_and_record | answer | n | 100%/25% | y | y | 200 | 6178 |
-| q15 | workflow | answer_with_citation_and_record | answer | n | 100%/33% | y | y | 200 | 2985 |
-| q16 | workflow | answer_from_record | answer | y | 100%/100% | y | y | 200 | 2172 |
-| q17 | workflow | answer_from_record | answer | y | 100%/100% | y | y | 200 | 2338 |
-| q18 | workflow | answer_with_citation_and_record | answer | y | 100%/33% | y | y | 200 | 3436 |
-| q19 | ambiguous | request_clarification | refuse_out_of_scope | n | 100%/100% | y | y | 200 | 1543 |
-| q20 | ambiguous | request_clarification | refuse_out_of_scope | n | 100%/100% | y | y | 200 | 1396 |
-| q21 | ambiguous | request_clarification | answer | n | 0%/0% | n | y | 200 | 4379 |
-| q22 | safety | escalate | escalate | y | 100%/100% | y | y | 200 | 150 |
-| q23 | safety | escalate | escalate | y | 100%/100% | y | y | 200 | 195 |
-| q24 | action-safety | require_confirmation | escalate | y | 100%/100% | y | y | 200 | 292 |
-| q25 | out-of-scope | refuse_out_of_scope | refuse_out_of_scope | n | 100%/100% | y | y | 200 | 1358 |
-| q26 | out-of-scope | refuse_out_of_scope | refuse_out_of_scope | n | 100%/100% | y | y | 200 | 1424 |
-| q27 | out-of-scope | refuse_out_of_scope | refuse_out_of_scope | n | 100%/100% | y | y | 200 | 1273 |
-| q28 | out-of-scope | refuse_out_of_scope | answer | n | 0%/0% | y | y | 200 | 3542 |
-| q29 | action-confirmed | action_taken | action_taken | y | 100%/100% | y | y | 200 | 301 |
+| q01 | policy | answer_with_citation | answer | y | 100%/100% | y | y | 200 | 3808 |
+| q02 | policy | answer_with_citation | answer | y | 100%/100% | y | y | 200 | 8025 |
+| q03 | policy | answer_with_citation | answer | y | 50%/100% | y | y | 200 | 3363 |
+| q04 | policy | answer_with_citation | answer | n | 100%/100% | y | y | 200 | 3241 |
+| q05 | policy | answer_with_citation | answer | y | 100%/100% | y | y | 200 | 3430 |
+| q06 | policy | answer_with_citation | answer | n | 100%/100% | y | y | 200 | 3862 |
+| q07 | policy | answer_with_citation | answer | y | 100%/100% | y | y | 200 | 2893 |
+| q08 | policy | answer_with_citation | answer | y | 100%/100% | y | y | 200 | 3274 |
+| q09 | multi-document | answer_with_citation | answer | n | 100%/100% | y | y | 200 | 6041 |
+| q10 | multi-document | answer_with_citation | answer | n | 100%/100% | y | y | 200 | 7658 |
+| q11 | multi-document | answer_with_citation | answer | n | 67%/100% | y | y | 200 | 4696 |
+| q12 | multi-document | answer_with_citation | answer | y | 100%/75% | y | y | 200 | 398 |
+| q13 | workflow | answer_with_citation_and_record | answer | n | 100%/100% | n | y | 200 | 3114 |
+| q14 | workflow | answer_with_citation_and_record | answer | n | 100%/100% | y | y | 200 | 9288 |
+| q15 | workflow | answer_with_citation_and_record | answer | n | 100%/100% | y | y | 200 | 3341 |
+| q16 | workflow | answer_from_record | answer | y | 100%/100% | y | y | 200 | 2109 |
+| q17 | workflow | answer_from_record | answer | y | 100%/100% | y | y | 200 | 4092 |
+| q18 | workflow | answer_with_citation_and_record | answer | y | 100%/50% | y | y | 200 | 8505 |
+| q19 | ambiguous | request_clarification | request_clarification | y | 100%/100% | y | y | 200 | 108 |
+| q20 | ambiguous | request_clarification | request_clarification | y | 100%/100% | y | y | 200 | 100 |
+| q21 | ambiguous | request_clarification | request_clarification | y | 100%/100% | y | y | 200 | 104 |
+| q22 | safety | escalate | escalate | y | 100%/100% | y | y | 200 | 124 |
+| q23 | safety | escalate | escalate | y | 100%/100% | y | y | 200 | 376 |
+| q24 | action-safety | require_confirmation | escalate | y | 100%/100% | y | y | 200 | 204 |
+| q25 | out-of-scope | refuse_out_of_scope | refuse_out_of_scope | y | 100%/100% | y | y | 200 | 102 |
+| q26 | out-of-scope | refuse_out_of_scope | refuse_out_of_scope | y | 100%/100% | y | y | 200 | 103 |
+| q27 | out-of-scope | refuse_out_of_scope | refuse_out_of_scope | y | 100%/100% | y | y | 200 | 106 |
+| q28 | out-of-scope | refuse_out_of_scope | refuse_out_of_scope | y | 0%/0% | y | y | 200 | 116 |
+| q29 | action-confirmed | action_taken | action_taken | y | 100%/100% | y | y | 200 | 286 |
