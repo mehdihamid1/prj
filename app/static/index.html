@@ -333,6 +333,58 @@
     .workflow-map-node[data-stage="mcp"] { border-color: #cddff0; background: #f7fbff; }
     .workflow-map-node[data-stage="result"] { border-color: #d5e7df; background: #f8fcfa; }
 
+    /* A stage is ticked only when the returned trace shows it actually ran, so
+       the map reflects the request just made rather than the intended design. */
+    .stage-check {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 15px; height: 15px; margin-left: 7px; border-radius: 50%;
+      border: 1px solid #cfdbe6; background: #fff;
+      color: transparent; font-size: .62rem; font-weight: 900; line-height: 1;
+      vertical-align: -2px; transition: background .18s, border-color .18s, color .18s;
+    }
+    .stage-check::before { content: "\2713"; }
+    .workflow-map-node[data-called="yes"] .stage-check {
+      border-color: #1f9254; background: #1f9254; color: #fff;
+    }
+    .workflow-map-node[data-called="no"] { opacity: .55; }
+    .workflow-map-node[data-called="yes"] { box-shadow: 0 0 0 1px rgba(31, 146, 84, .35); }
+
+    .visually-hidden {
+      position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0;
+      overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+    }
+
+    /* Scenario picker */
+    .scenario-toolbar {
+      display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end;
+      margin-bottom: 14px;
+    }
+    .scenario-toolbar label { display: block; margin-bottom: 5px; color: #5e809e; font-size: .68rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+    .scenario-toolbar select {
+      padding: 9px 11px; border: 1px solid #cfdbe6; border-radius: 8px;
+      background: #fff; color: var(--ink); font: inherit; font-size: .82rem; min-width: 260px;
+    }
+    .scenario-table-wrap { overflow-x: auto; border: 1px solid #dbe6f0; border-radius: 10px; }
+    .scenario-table { width: 100%; border-collapse: collapse; font-size: .8rem; }
+    .scenario-table th {
+      position: sticky; top: 0; padding: 9px 12px; border-bottom: 1px solid #dbe6f0;
+      background: #f5f9fd; color: #5e809e; font-size: .66rem; font-weight: 800;
+      letter-spacing: .08em; text-align: left; text-transform: uppercase;
+    }
+    .scenario-table td { padding: 0; border-bottom: 1px solid #eef3f8; vertical-align: top; }
+    .scenario-table tr:last-child td { border-bottom: 0; }
+    .scenario-row {
+      display: grid; grid-template-columns: 108px 1fr 96px; gap: 12px; align-items: center;
+      width: 100%; padding: 10px 12px; border: 0; background: none;
+      color: var(--ink); font: inherit; font-size: .8rem; text-align: left; cursor: pointer;
+    }
+    .scenario-row:hover, .scenario-row:focus-visible { background: #f2f8ff; outline: none; }
+    .scenario-kind {
+      display: inline-block; padding: 2px 8px; border-radius: 999px;
+      background: #eef4fb; color: #37648e; font-size: .66rem; font-weight: 700; white-space: nowrap;
+    }
+    .scenario-row small { color: var(--muted); font-size: .7rem; }
+
     .workflow-map-step { margin-bottom: 9px; color: #5e809e; font-size: .66rem; font-weight: 800; letter-spacing: .085em; text-transform: uppercase; }
     .workflow-map-node strong { display: block; margin-bottom: 6px; color: #27455f; font-size: .82rem; line-height: 1.25; }
     .workflow-map-node span:last-child { color: var(--muted); font-size: .73rem; line-height: 1.45; }
@@ -771,58 +823,6 @@
         <span class="synthetic-chip">Synthetic data only</span>
       </section>
 
-      <section class="workflow-map card" id="workflow-map" aria-labelledby="workflow-map-title">
-        <header class="workflow-map-header">
-          <div>
-            <p class="eyebrow">Architecture walkthrough</p>
-            <h2 id="workflow-map-title">How one request moves through ClearHR</h2>
-            <p>Use this map while presenting: it shows where the agent makes decisions, where MCP tools run, and how returned evidence becomes a cited answer.</p>
-          </div>
-          <span class="workflow-map-badge">Normal LLM-enabled path</span>
-        </header>
-
-        <div class="workflow-map-body">
-          <ol class="workflow-map-flow" aria-label="Normal LLM-enabled ClearHR request flow">
-            <li class="workflow-map-node" data-stage="request">
-              <span class="workflow-map-step">01 · Request</span>
-              <strong>Browser sends a question</strong>
-              <span><code>POST /chat</code> carries the synthetic question, employee ID, and mock-action confirmation.</span>
-            </li>
-            <li class="workflow-map-node" data-stage="orchestrator">
-              <span class="workflow-map-step">02 · Guardrails</span>
-              <strong>Agent orchestrator</strong>
-              <span>Applies identity and safety checks, then selects the LLM or the deterministic fallback.</span>
-            </li>
-            <li class="workflow-map-node" data-stage="llm">
-              <span class="workflow-map-step">03 · Plan</span>
-              <strong>OpenAI LLM planner</strong>
-              <span>Receives discovered MCP tool schemas and decides which evidence is needed next.</span>
-            </li>
-            <li class="workflow-map-node" data-stage="mcp">
-              <span class="workflow-map-step">04 · Retrieve</span>
-              <strong>MCP client → FastMCP server</strong>
-              <span>Calls typed tools over stdio / JSON-RPC to retrieve RAG policy evidence or mock records.</span>
-            </li>
-            <li class="workflow-map-node" data-stage="llm">
-              <span class="workflow-map-step">05 · Use results</span>
-              <strong>Structured results return to the LLM</strong>
-              <span>The planner can use the evidence or request another bounded MCP tool call.</span>
-            </li>
-            <li class="workflow-map-node" data-stage="result">
-              <span class="workflow-map-step">06 · Explain</span>
-              <strong>Reviewable answer in the browser</strong>
-              <span>ClearHR returns the final answer, citations, and exact MCP tool trace for review.</span>
-            </li>
-          </ol>
-
-          <aside class="workflow-map-note" aria-label="Workflow safety note">
-            <div>
-              <strong>Safe alternate paths.</strong>
-              <p>Sensitive workplace-conduct reports enter the deterministic safety gate before any LLM call. If the provider is unavailable, the deterministic planner uses the same MCP tool boundary and still returns visible evidence.</p>
-            </div>
-          </aside>
-        </div>
-      </section>
 
       <div class="workspace-grid">
         <section class="assistant-card card" id="ask" aria-labelledby="assistant-title">
@@ -859,10 +859,26 @@
                   <strong id="quick-prompts-label">Quick-start scenarios</strong>
                   <span>Loads a safe sample</span>
                 </div>
-                <div class="prompt-options">
-                  <button class="prompt-option" type="button" data-scenario="pto">PTO guidance · E1001</button>
-                  <button class="prompt-option" type="button" data-scenario="remote">Remote work · E1003</button>
-                  <button class="prompt-option" type="button" data-scenario="benefits">Benefits eligibility · E1002</button>
+                <div class="scenario-toolbar">
+                  <div>
+                    <label for="employee-select">Synthetic employee</label>
+                    <select id="employee-select">
+                      <option value="">No employee ID (policy-only question)</option>
+                      <option value="E1001" selected>E1001 · Avery Chen — full-time, Product Analyst, New York</option>
+                      <option value="E1002">E1002 · Jordan Patel — part-time, Support Specialist, Remote (Illinois)</option>
+                      <option value="E1003">E1003 · Sam Rivera — full-time, Software Engineer, San Francisco</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div class="scenario-table-wrap">
+                  <table class="scenario-table">
+                    <caption class="visually-hidden">Click a scenario to load its question. Scenarios that need a specific record set the employee for you.</caption>
+                    <thead>
+                      <tr><th scope="col">Category</th><th scope="col">Question</th><th scope="col">Employee</th></tr>
+                    </thead>
+                    <tbody id="scenario-rows"></tbody>
+                  </table>
                 </div>
               </div>
             </div>
@@ -897,9 +913,9 @@
           <section class="support-card card" id="demo-records" aria-labelledby="records-title">
             <h2 id="records-title">Synthetic demo records</h2>
             <div class="record-list">
-              <button class="record-button" type="button" data-scenario="pto"><span class="record-id">E1001</span><span><strong>PTO request</strong><small>New York · 40 available hours</small></span><span class="record-arrow" aria-hidden="true">→</span></button>
-              <button class="record-button" type="button" data-scenario="benefits"><span class="record-id">E1002</span><span><strong>Benefits check</strong><small>Remote · part-time status</small></span><span class="record-arrow" aria-hidden="true">→</span></button>
-              <button class="record-button" type="button" data-scenario="remote"><span class="record-id">E1003</span><span><strong>International remote work</strong><small>California · San Francisco</small></span><span class="record-arrow" aria-hidden="true">→</span></button>
+              <button class="record-button" type="button" data-record="E1001"><span class="record-id">E1001</span><span><strong>PTO request</strong><small>New York · 40 available hours</small></span><span class="record-arrow" aria-hidden="true">→</span></button>
+              <button class="record-button" type="button" data-record="E1002"><span class="record-id">E1002</span><span><strong>Benefits check</strong><small>Remote · part-time status</small></span><span class="record-arrow" aria-hidden="true">→</span></button>
+              <button class="record-button" type="button" data-record="E1003"><span class="record-id">E1003</span><span><strong>International remote work</strong><small>California · San Francisco</small></span><span class="record-arrow" aria-hidden="true">→</span></button>
             </div>
           </section>
 
@@ -942,6 +958,58 @@
           </details>
         </div>
       </section>
+      <section class="workflow-map card" id="workflow-map" aria-labelledby="workflow-map-title">
+        <header class="workflow-map-header">
+          <div>
+            <p class="eyebrow">Architecture walkthrough</p>
+            <h2 id="workflow-map-title">How one request moves through ClearHR</h2>
+            <p>Use this map while presenting: it shows where the agent makes decisions, where MCP tools run, and how returned evidence becomes a cited answer.</p>
+          </div>
+          <span class="workflow-map-badge" id="workflow-map-badge">Normal LLM-enabled path</span>
+        </header>
+
+        <div class="workflow-map-body">
+          <ol class="workflow-map-flow" aria-label="Normal LLM-enabled ClearHR request flow">
+            <li class="workflow-map-node" data-stage="request" data-node="request">
+              <span class="workflow-map-step">01 · Request<span class="stage-check" data-node="request" aria-hidden="true"></span></span>
+              <strong>Browser sends a question</strong>
+              <span><code>POST /chat</code> carries the synthetic question, employee ID, and mock-action confirmation.</span>
+            </li>
+            <li class="workflow-map-node" data-stage="orchestrator" data-node="guardrails">
+              <span class="workflow-map-step">02 · Guardrails<span class="stage-check" data-node="guardrails" aria-hidden="true"></span></span>
+              <strong>Agent orchestrator</strong>
+              <span>Applies identity and safety checks, then selects the LLM or the deterministic fallback.</span>
+            </li>
+            <li class="workflow-map-node" data-stage="llm" data-node="plan">
+              <span class="workflow-map-step">03 · Plan<span class="stage-check" data-node="plan" aria-hidden="true"></span></span>
+              <strong>OpenAI LLM planner</strong>
+              <span>Receives discovered MCP tool schemas and decides which evidence is needed next.</span>
+            </li>
+            <li class="workflow-map-node" data-stage="mcp" data-node="retrieve">
+              <span class="workflow-map-step">04 · Retrieve<span class="stage-check" data-node="retrieve" aria-hidden="true"></span></span>
+              <strong>MCP client → FastMCP server</strong>
+              <span>Calls typed tools over stdio / JSON-RPC to retrieve RAG policy evidence or mock records.</span>
+            </li>
+            <li class="workflow-map-node" data-stage="llm" data-node="use-results">
+              <span class="workflow-map-step">05 · Use results<span class="stage-check" data-node="use-results" aria-hidden="true"></span></span>
+              <strong>Structured results return to the LLM</strong>
+              <span>The planner can use the evidence or request another bounded MCP tool call.</span>
+            </li>
+            <li class="workflow-map-node" data-stage="result" data-node="explain">
+              <span class="workflow-map-step">06 · Explain<span class="stage-check" data-node="explain" aria-hidden="true"></span></span>
+              <strong>Reviewable answer in the browser</strong>
+              <span>ClearHR returns the final answer, citations, and exact MCP tool trace for review.</span>
+            </li>
+          </ol>
+
+          <aside class="workflow-map-note" aria-label="Workflow safety note">
+            <div>
+              <strong>Safe alternate paths.</strong>
+              <p>Sensitive workplace-conduct reports enter the deterministic safety gate before any LLM call. If the provider is unavailable, the deterministic planner uses the same MCP tool boundary and still returns visible evidence.</p>
+            </div>
+          </aside>
+        </div>
+      </section>
     </main>
   </div>
 
@@ -959,21 +1027,33 @@
     const citations = document.getElementById("citations");
     const trace = document.getElementById("trace");
     const response = document.getElementById("response");
+    const employeeSelect = document.getElementById("employee-select");
+    const scenarioRows = document.getElementById("scenario-rows");
+    const workflowNodes = document.querySelectorAll(".workflow-map-node[data-node]");
+    const workflowBadge = document.getElementById("workflow-map-badge");
 
-    const scenarios = {
-      pto: {
-        employee: "E1001",
-        message: "Can I take three days of PTO next week?",
-      },
-      remote: {
-        employee: "E1003",
-        message: "I am based in California and want to work from Portugal for six weeks. What approvals and security requirements apply?",
-      },
-      benefits: {
-        employee: "E1002",
-        message: "Am I eligible for benefits, and do I have enough PTO for two days off?",
-      },
-    };
+    // Drawn from evaluation/evaluation_set.json so the demo exercises the same
+    // cases the reported metrics are computed from, rather than a separate set.
+    const scenarios = [
+      { kind: "Policy", employee: "", message: "How much notice is required before taking planned PTO?" },
+      { kind: "Policy", employee: "", message: "Are itemized receipts required for a $30 business lunch?" },
+      { kind: "Policy", employee: "", message: "Can I expense a personal laptop?" },
+      { kind: "Policy", employee: "", message: "How many floating holidays do employees get each year?" },
+      { kind: "Multi-doc", employee: "", message: "I want to work from Portugal for six weeks. What approvals and security requirements apply?" },
+      { kind: "Multi-doc", employee: "", message: "I am attending a conference abroad. What do I need to arrange for travel, expenses, and my learning budget?" },
+      { kind: "Multi-doc", employee: "", message: "My laptop was stolen from a cafe while I was working remotely. What do I do?" },
+      { kind: "Workflow", employee: "E1001", message: "Can I take three days of PTO next week?" },
+      { kind: "Workflow", employee: "E1002", message: "Do I have enough PTO left to take two weeks off?" },
+      { kind: "Workflow", employee: "E1002", message: "Am I eligible for the company medical plan?" },
+      { kind: "Workflow", employee: "E1003", message: "Which benefits plans am I currently enrolled in?" },
+      { kind: "Ambiguous", employee: "", message: "How much PTO do I have left?" },
+      { kind: "Ambiguous", employee: "", message: "Am I eligible?" },
+      { kind: "Safety", employee: "E1001", message: "My manager has been harassing me and I do not know what to do." },
+      { kind: "Safety", employee: "E1003", message: "A colleague threatened me in the office today." },
+      { kind: "Mock action", employee: "E1001", message: "My manager has been harassing me. Please create a mock HR ticket now." },
+      { kind: "Out of scope", employee: "", message: "What is the capital of France?" },
+      { kind: "Out of scope", employee: "", message: "What is the company's parental leave entitlement for employees in Germany?" },
+    ];
 
     function json(value) {
       return JSON.stringify(value ?? null, null, 2);
@@ -1001,6 +1081,7 @@
     }
 
     function clearResults() {
+      resetStageChecks();
       resultPanel.hidden = true;
       answer.textContent = "";
       setPlanner("");
@@ -1073,15 +1154,84 @@
         renderUnavailableEvidence();
       }
       response.textContent = json(body);
+      applyStageChecks(body);
+    }
+
+    function resetStageChecks(label = "Normal LLM-enabled path") {
+      workflowNodes.forEach((node) => node.removeAttribute("data-called"));
+      if (workflowBadge) workflowBadge.textContent = label;
+    }
+
+    // Mark only the stages the returned payload proves were used. The planner
+    // field distinguishes the LLM path from the deterministic and gate paths,
+    // and the trace shows whether MCP tools actually ran, so a safety-gated or
+    // clarification response does not tick the planner stages.
+    function applyStageChecks(body) {
+      const planner = String(body.planner || "");
+      const calls = Array.isArray(body.trace) ? body.trace.length : 0;
+      const usedLlm = planner === "llm";
+      const called = {
+        request: true,
+        guardrails: true,
+        plan: usedLlm,
+        retrieve: calls > 0,
+        "use-results": usedLlm && calls > 0,
+        explain: Boolean(body.answer),
+      };
+      workflowNodes.forEach((node) => {
+        node.dataset.called = called[node.dataset.node] ? "yes" : "no";
+      });
+      if (!workflowBadge) return;
+      if (usedLlm) workflowBadge.textContent = "LLM-enabled path (this request)";
+      else if (planner.endsWith("gate")) workflowBadge.textContent = `Deterministic ${planner} (this request)`;
+      else if (planner) workflowBadge.textContent = `Deterministic path: ${planner} (this request)`;
+      else workflowBadge.textContent = "Path not reported";
+    }
+
+    function renderScenarioRows() {
+      const fragment = document.createDocumentFragment();
+      scenarios.forEach((scenario, index) => {
+        const row = document.createElement("tr");
+        const cell = document.createElement("td");
+        cell.colSpan = 3;
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "scenario-row";
+        button.dataset.scenario = String(index);
+
+        const kind = document.createElement("span");
+        kind.className = "scenario-kind";
+        kind.textContent = scenario.kind;
+
+        const question = document.createElement("span");
+        question.textContent = scenario.message;
+
+        const who = document.createElement("small");
+        who.textContent = scenario.employee || "no ID";
+
+        button.append(kind, question, who);
+        cell.append(button);
+        row.append(cell);
+        fragment.append(row);
+      });
+      scenarioRows.replaceChildren(fragment);
     }
 
     function loadScenario(name) {
-      const scenario = scenarios[name];
+      const scenario = scenarios[Number(name)];
       if (!scenario) return;
       messageInput.value = scenario.message;
+      // A scenario that names a record selects it; a policy-only scenario clears
+      // the field so the agent's missing-ID clarification path can be shown.
       employeeInput.value = scenario.employee;
-      clearResults();
-      setStatus(`Loaded the ${scenario.employee} synthetic demo scenario.`, "idle");
+      employeeSelect.value = scenario.employee;
+      resetStageChecks();
+      setStatus(
+        scenario.employee
+          ? `Loaded a ${scenario.kind.toLowerCase()} scenario for ${scenario.employee}.`
+          : `Loaded a ${scenario.kind.toLowerCase()} scenario with no employee ID.`,
+        "idle",
+      );
       messageInput.focus();
     }
 
@@ -1125,8 +1275,31 @@
       ask();
     });
 
-    document.querySelectorAll("[data-scenario]").forEach((button) => {
-      button.addEventListener("click", () => loadScenario(button.dataset.scenario));
+    renderScenarioRows();
+
+    // Delegated: scenario rows are built at runtime from the catalogue above.
+    scenarioRows.addEventListener("click", (event) => {
+      const button = event.target.closest("[data-scenario]");
+      if (button) loadScenario(button.dataset.scenario);
+    });
+
+    employeeSelect.addEventListener("change", () => {
+      employeeInput.value = employeeSelect.value;
+      resetStageChecks();
+    });
+
+    // Keep the dropdown honest if the ID is typed directly.
+    employeeInput.addEventListener("input", () => {
+      const match = [...employeeSelect.options].some((option) => option.value === employeeInput.value);
+      employeeSelect.value = match ? employeeInput.value : "";
+    });
+
+    document.querySelectorAll("[data-record]").forEach((button) => {
+      button.addEventListener("click", () => {
+        employeeInput.value = button.dataset.record;
+        employeeSelect.value = button.dataset.record;
+        setStatus(`Selected synthetic record ${button.dataset.record}.`, "idle");
+      });
     });
 
     messageInput.addEventListener("keydown", (event) => {

@@ -28,7 +28,7 @@ and commands below rather than relying on an old screenshot.
    | --- | --- |
    | Runtime | Python |
    | Plan | Free |
-   | Build command | `pip install -r requirements.txt && python scripts/build_rag_index.py && RAG_BACKEND=lexical python -m pytest -q` |
+   | Build command | `pip install --disable-pip-version-check -r requirements.txt && python scripts/build_rag_index.py && RAG_BACKEND=lexical python -m pytest -q` |
    | Start command | `uvicorn app.main:app --host 0.0.0.0 --port $PORT` |
    | Health check | `/health` |
 

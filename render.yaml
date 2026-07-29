@@ -6,7 +6,7 @@ services:
     # Build/cache the backend selected by the non-secret RAG_BACKEND setting.
     # Tests stay hermetic on lexical; a dense build itself verifies the local
     # ONNX model can be downloaded and indexed before the service starts.
-    buildCommand: pip install -r requirements.txt && python scripts/build_rag_index.py && RAG_BACKEND=lexical python -m pytest -q
+    buildCommand: pip install --disable-pip-version-check -r requirements.txt && python scripts/build_rag_index.py && RAG_BACKEND=lexical python -m pytest -q
     startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /health
     # Render waits for the repository's GitHub checks before starting an
