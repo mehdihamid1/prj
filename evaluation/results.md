@@ -5,7 +5,7 @@ Mode: deployed HTTP: `https://clearhr-agentic-hr-assistant.onrender.com` · sequ
 ## Run provenance
 
 - Evaluation set SHA-256: `9b1637833f134420c51da143b107b503d970e95f258d76a4b3ca8655d22e9ebb`
-- Evaluator Git SHA: `2129ce81944adbd094a9f293ff867320e3d7fa54`
+- Evaluator Git SHA: `81016fbc04694b27608a56ad40181ed25383c793`
 - Requested deployment revision: `not supplied`
 - Requested deployment model: `not supplied`
 - Required MCP-child backend: `dense`
@@ -17,31 +17,31 @@ Each row is the median and min–max range across complete sequential runs. This
 
 | Metric | Median | Range | Individual runs |
 | --- | --- | --- | --- |
-| Behaviour accuracy | 100% | 100%–100% | 29/29 (100%); 29/29 (100%); 29/29 (100%) |
-| Answer rubric accuracy | 72% | 72%–83% | 21/29 (72%); 21/29 (72%); 24/29 (83%) |
-| End-to-end pass rate | 69% | 66%–79% | 19/29 (66%); 20/29 (69%); 23/29 (79%) |
-| Citation document recall | 93% | 93%–93% | 26/28 (93%); 26/28 (93%); 26/28 (93%) |
-| Citation document precision | 93% | 93%–93% | 26/28 (93%); 26/28 (93%); 26/28 (93%) |
-| Citation complete required coverage | 90% | 90%–90% | 18/20 (90%); 18/20 (90%); 18/20 (90%) |
-| Multi-document complete coverage | 60% | 60%–60% | 3/5 (60%); 3/5 (60%); 3/5 (60%) |
+| Behaviour accuracy | 97% | 97%–100% | 28/29 (97%); 29/29 (100%); 28/29 (97%) |
+| Answer rubric accuracy | 76% | 69%–79% | 23/29 (79%); 22/29 (76%); 20/29 (69%) |
+| End-to-end pass rate | 76% | 66%–76% | 22/29 (76%); 22/29 (76%); 19/29 (66%) |
+| Citation document recall | 89% | 89%–96% | 25/28 (89%); 27/28 (96%); 25/28 (89%) |
+| Citation document precision | 86% | 83%–87% | 25/29 (86%); 27/31 (87%); 25/30 (83%) |
+| Citation complete required coverage | 85% | 85%–95% | 17/20 (85%); 19/20 (95%); 17/20 (85%) |
+| Multi-document complete coverage | 60% | 60%–80% | 3/5 (60%); 4/5 (80%); 3/5 (60%) |
 | Citation structure valid | 100% | 100%–100% | 29/29 (100%); 29/29 (100%); 29/29 (100%) |
 | Citation IDs resolve to local index | n/a | n/a | n/a; n/a; n/a |
-| Required-tool recall | 90% | 90%–93% | 26/29 (90%); 26/29 (90%); 27/29 (93%) |
-| Required-tool complete coverage | 90% | 90%–93% | 26/29 (90%); 26/29 (90%); 27/29 (93%) |
-| Workflow completion | 50% | 44%–67% | 8/18 (44%); 9/18 (50%); 12/18 (67%) |
+| Required-tool recall | 97% | 90%–97% | 28/29 (97%); 26/29 (90%); 28/29 (97%) |
+| Required-tool complete coverage | 97% | 90%–97% | 28/29 (97%); 26/29 (90%); 28/29 (97%) |
+| Workflow completion | 61% | 44%–61% | 11/18 (61%); 11/18 (61%); 8/18 (44%) |
 | Confirmation/action contract | 100% | 100%–100% | 29/29 (100%); 29/29 (100%); 29/29 (100%) |
 | Confirmed mock-action completion | 100% | 100%–100% | 1/1 (100%); 1/1 (100%); 1/1 (100%) |
-| Groundedness (automatic proxy) | 93% | 93%–93% | 27/29 (93%); 27/29 (93%); 27/29 (93%) |
+| Groundedness (automatic proxy) | 90% | 90%–97% | 26/29 (90%); 28/29 (97%); 26/29 (90%) |
 | HTTP success | 100% | 100%–100% | 29/29 (100%); 29/29 (100%); 29/29 (100%) |
-| Latency p50 | 3683.2 ms | 3593.4–4011.5 ms | 3593.4 ms; 4011.5 ms; 3683.2 ms |
-| Latency p95 | 7285.8 ms | 7268.1–7549.6 ms | 7549.6 ms; 7285.8 ms; 7268.1 ms |
+| Latency p50 | 2761.3 ms | 2673.5–3523.9 ms | 2761.3 ms; 3523.9 ms; 2673.5 ms |
+| Latency p95 | 7167.3 ms | 6099.2–7438.8 ms | 7438.8 ms; 7167.3 ms; 6099.2 ms |
 
 ## Individual run summaries
 
 | Run | UTC start | Planner | End-to-end | Answer rubric | Citation precision | Workflow | p95 latency |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| 1 | 2026-07-29T17:58:22.591371Z | mixed | 19/29 (66%) | 21/29 (72%) | 26/28 (93%) | 8/18 (44%) | 7549.6 ms |
-| 2 | 2026-07-29T18:00:05.244936Z | mixed | 20/29 (69%) | 21/29 (72%) | 26/28 (93%) | 9/18 (50%) | 7285.8 ms |
-| 3 | 2026-07-29T18:01:43.851529Z | mixed | 23/29 (79%) | 24/29 (83%) | 26/28 (93%) | 12/18 (67%) | 7268.1 ms |
+| 1 | 2026-07-29T21:03:29.635391Z | mixed | 22/29 (76%) | 23/29 (79%) | 25/29 (86%) | 11/18 (61%) | 7438.8 ms |
+| 2 | 2026-07-29T21:05:10.083794Z | mixed | 22/29 (76%) | 22/29 (76%) | 27/31 (87%) | 11/18 (61%) | 7167.3 ms |
+| 3 | 2026-07-29T21:06:51.650574Z | mixed | 19/29 (66%) | 20/29 (69%) | 25/30 (83%) | 8/18 (44%) | 6099.2 ms |
 
 All per-case synthetic answers, citations, MCP traces, and raw run summaries are retained in `evaluation/artifacts.json` for human review; no strongest run was selected for reporting.
