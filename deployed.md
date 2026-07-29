@@ -56,11 +56,30 @@ evidence for this Render deployment.
 
 ### Cold start
 
-Render's free instance sleeps after roughly 15 minutes of inactivity. The
-latency above is warm. Wake the service before recording the demo, and record
-one measured cold request here:
+Render's free instance sleeps after roughly 15 minutes of inactivity. Measured
+on 2026-07-29 by leaving the service untouched for 16.5 minutes, then timing one
+request from an external client:
 
-- Cold request after inactivity: **not yet measured**
+| Request | Wall-clock | HTTP |
+| --- | --- | --- |
+| `GET /health` — first request after idle (**cold**) | **42.5 s** | 200 |
+| `GET /health` — immediately after (warm) | 0.24 s | 200 |
+| `POST /chat` — first answer after wake | 8.4 s | 200 |
+
+The cold request is ~180x the warm one. It covers Render restoring the
+container, the app building or loading the policy index, and the MCP child
+loading the FastEmbed BGE model, which the lexical backend does not do. Nothing
+is served until that completes, so a visitor arriving at a sleeping instance
+waits the full 42.5 s with no feedback.
+
+Two consequences for presenting this service:
+
+- **Wake it before recording the demo or showing it to a grader.** One request
+  to `/health` a minute beforehand is enough; the service then stays warm while
+  in use.
+- The 29-case evaluation in `evaluation/results.md` reports **warm** latency.
+  Its p50 of ~3.7 s is the steady-state figure and excludes this cold path,
+  which is measured separately here on purpose.
 
 ## Deployment configuration
 

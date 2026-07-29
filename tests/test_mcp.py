@@ -91,6 +91,32 @@ def test_policy_section_does_not_expose_internal_embeddings():
     assert all("embedding" not in chunk for chunk in result)
 
 
+def test_policy_section_returns_available_headings_for_a_near_miss():
+    """An LLM can correct a heading without receiving an unstructured empty list."""
+    result = asyncio.run(call("get_policy_section", {
+        "document": "travel_policy.md", "section": "Booking and Approval",
+    }))
+
+    assert result == [{
+        "error": "section_not_found",
+        "document": "travel_policy.md",
+        "requested_section": "Booking and Approval",
+        "available_sections": [
+            "Air Travel",
+            "Approval",
+            "Booking",
+            "Common Questions",
+            "Exceptions and Interpretation",
+            "Ground Transport",
+            "Lodging",
+            "Meals",
+            "Personal Travel Combined with Business",
+            "Purpose and Scope",
+            "Safety and Duty of Care",
+        ],
+    }]
+
+
 def test_mock_ticket_tool_enforces_confirmation_and_known_employee():
     blocked = asyncio.run(call("create_mock_hr_ticket", {
         "employee_id": "E1001", "summary": "synthetic concern", "category": "workplace-conduct",

@@ -37,15 +37,33 @@ def get_retrieval_status() -> dict:
 
 @mcp.tool()
 def get_policy_section(document: str, section: str) -> list[dict]:
-    """Get a policy section by document filename/title and section name."""
+    """Get a policy section by document filename/title and section name.
+
+    If the requested heading is not present, return a structured recovery hint
+    with the available headings for that document.  Keeping the response a
+    list preserves the MCP schema and lets the agent correct a near-miss
+    heading without treating it as policy evidence.
+    """
     # The persisted index includes an internal embedding used only by retrieval.
     # Do not send it over MCP: it inflates model context and is not citation data.
+    chunks = rag.load_index()["chunks"]
     matches = [
         {key: value for key, value in item.items() if key != "embedding"}
-        for item in rag.load_index()["chunks"]
+        for item in chunks
         if item["document"] == document and item["section"].lower() == section.lower()
     ]
-    return matches[:8]
+    if matches:
+        return matches[:8]
+
+    available_sections = sorted({
+        item["section"] for item in chunks if item["document"] == document
+    })
+    return [{
+        "error": "section_not_found",
+        "document": document,
+        "requested_section": section,
+        "available_sections": available_sections,
+    }]
 
 
 @mcp.tool()
