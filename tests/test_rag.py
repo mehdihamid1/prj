@@ -7,3 +7,7 @@ def test_policy_search_returns_citable_pto_evidence():
     assert result
     assert any(item["document"] == "pto_policy.md" for item in result)
     assert all({"id", "section", "text"} <= item.keys() for item in result)
+
+
+def test_policy_search_respects_an_empty_requested_limit():
+    assert search("PTO", 0) == []

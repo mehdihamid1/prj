@@ -1,41 +1,44 @@
 # Open Items Before Submission
 
-This file separates what is already verified locally from the work that still
-requires an account, a live host, or human review. It prevents the deterministic
-test run from being presented as evidence about the live LLM system.
+This file separates verified evidence from work that still requires an account,
+a live host, or human review. It prevents a local deterministic test run—or an
+old public evaluation—from being presented as evidence about a newer planner
+revision.
 
-## Blocking: run the LLM planner with a real API key
+## Verified: live LLM planner and public HTTP evaluation
 
-The tool-use loop is covered by stubbed tests, but no real OpenAI request has
-been made. The committed default is `gpt-5.6-luna`; fund the API project and
-confirm that the supplied `OPENAI_API_KEY` can use that model before starting
-the app and exercising both demo tasks. Confirm in each response that `planner`
-is `llm`, the trace contains the expected MCP tool calls, and citations support
-the final answer.
+Render is the submitted host. Its `/health` endpoint and 29-case public HTTP
+evaluation are recorded in `deployed.md`, `evaluation/results.md`, and
+`evaluation/artifacts.json`. The artifacts show real `planner: "llm"` responses
+alongside deterministic safety-gate responses; they are not a fallback-only
+test. The report deliberately labels that mixture rather than calling every
+case an LLM decision.
 
-Then run the local LLM evaluation and retrieval ablation:
+The committed default is `gpt-5.6-luna`. A response proves that an LLM planner
+ran, but it does not by itself prove the exact host model override or deployed
+commit. Keep the host variable and deployment revision in the presenter notes;
+never expose the API key.
+
+## Blocking: deploy each planner/safety revision and re-run the public evaluation
+
+After a change to the planner, RAG, MCP tool policy, or safety gate, deploy the
+revision and run both the retrieval ablation and the public HTTP evaluation:
 
 ```bash
 python -m evaluation.run_eval --ablation
+python -m evaluation.run_eval --base-url https://clearhr-agentic-hr-assistant.onrender.com
 ```
 
-Then run the deployed HTTP evaluation separately:
+Commit the resulting `evaluation/results.md` and `evaluation/artifacts.json`.
+The remote mode records HTTP status and client-observed latency but correctly
+does not claim remote citation IDs resolve to the local index. Review failures;
+do not weaken an answer rubric merely to inflate a score.
 
-```bash
-python -m evaluation.run_eval --base-url https://your-service.example
-```
+## Blocking: finish public-service measurement
 
-Commit the resulting `evaluation/results.md`. The checked-in 100% metrics are
-for the local deterministic/safety paths only and must not be described as
-live-LLM-agent or deployed-host results.
-
-## Blocking: measure the public service
-
-The Railway deployment is already public and its app and `/health` URLs are in
-`deployed.md`. What remains is to measure and record one cold request after
-inactivity plus several warm requests. Use the 29-case `--base-url` evaluator
-against the selected host; it records client-observed HTTP status and latency
-but does not claim deployed citation IDs resolve to the local index.
+The current report contains a warm 29-case public run. What remains is one
+cold request after Render inactivity and a fresh post-deploy run after the
+current guardrail revision. Record the cold observation in `deployed.md`.
 
 The MCP stdio subprocess is started once at service boot rather than per
 request, so its ~0.6 s process-start cost is paid at startup and not on every
@@ -45,10 +48,10 @@ unmeasured in public is the host's wake-from-idle time and real LLM latency.
 
 ## Blocking: share the repository with the grader
 
-The current `main` branch is pushed to `mehdihamid1/prj` and has a successful
-GitHub Actions run. Share that repository with the GitHub account
-`quantic-grader` before submission. This access change must be performed by the
-repository owner and cannot be verified from the checked-in source.
+Share the exact `main` commit whose GitHub Actions checks are green with the
+GitHub account `quantic-grader` before submission. This access change must be
+performed by the repository owner and cannot be verified from the checked-in
+source.
 
 ## Blocking: record the demo
 
@@ -60,10 +63,11 @@ show design, deployment, CI/CD, and measured evaluation results.
 ## Blocking: submit the project administratively
 
 Use the course dashboard's **Submit Project** flow after the repository is
-shared, deployed, and recorded. If this is a group submission, agree on one
-member to submit, and upload the completed, signed final page of the Group
-Project Agreement when the dashboard requests it. Do not upload credentials,
-host screenshots containing secrets, or non-synthetic employee information.
+shared, deployed, and recorded. If this is a group submission, **only one
+member submits** on behalf of the group, and that person uploads the completed,
+signed final page of the Group Project Agreement when the dashboard requests
+it. Do not upload credentials, host screenshots containing secrets, or
+non-synthetic employee information.
 
 ## Should improve: replace the lexical index with a model-backed vector store
 

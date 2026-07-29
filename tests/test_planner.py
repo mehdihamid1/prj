@@ -98,6 +98,30 @@ def _install(monkeypatch, script: list[_Response]) -> _StubCompletions:
     return stub
 
 
+async def _fake_discover_tools() -> list[dict]:
+    """Keep planner unit tests hermetic; MCP protocol is tested separately."""
+    return [{
+        "name": "search_policy_documents",
+        "description": "Retrieve policy evidence.",
+        "inputSchema": {"type": "object", "properties": {"query": {"type": "string"}}},
+    }, {
+        "name": "get_policy_section",
+        "description": "Retrieve one identified policy section.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {"document": {"type": "string"}, "section": {"type": "string"}},
+        },
+    }, {
+        "name": "lookup_employee_profile",
+        "description": "Retrieve a synthetic employee profile.",
+        "inputSchema": {"type": "object", "properties": {"employee_id": {"type": "string"}}},
+    }, {
+        "name": "check_pto_balance",
+        "description": "Retrieve a synthetic PTO balance.",
+        "inputSchema": {"type": "object", "properties": {"employee_id": {"type": "string"}}},
+    }]
+
+
 def test_tool_schemas_convert_to_chat_completions_shape():
     from app.mcp_client import discover_tools
 
@@ -109,6 +133,30 @@ def test_tool_schemas_convert_to_chat_completions_shape():
         assert tool["function"]["parameters"]["type"] == "object"
 
 
+def test_only_authorised_discovered_tools_are_exposed_to_the_model():
+    """Schema discovery must not make a future write tool implicitly callable."""
+    discovered = [{
+        "name": "search_policy_documents",
+        "description": "Retrieve policy evidence.",
+        "inputSchema": {"type": "object", "properties": {"query": {"type": "string"}}},
+    }, {
+        "name": "check_pto_balance",
+        "description": "Retrieve a synthetic PTO balance.",
+        "inputSchema": {"type": "object", "properties": {"employee_id": {"type": "string"}}},
+    }]
+    future_tool = {
+        "name": "delete_employee_record",
+        "description": "An intentionally unclassified future capability.",
+        "inputSchema": {"type": "object", "properties": {}},
+    }
+
+    authorised = planner._authorised_tools([*discovered, future_tool])
+    exposed_names = {tool["function"]["name"] for tool in planner._to_openai_tools(authorised)}
+
+    assert exposed_names >= {"search_policy_documents", "check_pto_balance"}
+    assert "delete_employee_record" not in exposed_names
+
+
 def test_planner_dispatches_tool_call_and_records_trace(monkeypatch):
     # Pin the model rather than reading the ambient default. OPENAI_MODEL is a
     # host variable, and the deployment build runs this suite with the service's
@@ -116,9 +164,42 @@ def test_planner_dispatches_tool_call_and_records_trace(monkeypatch):
     # fail the build whenever the host deliberately overrides the model.
     monkeypatch.setattr(settings, "OPENAI_MODEL", "gpt-5.6-luna")
     stub = _install(monkeypatch, [
-        _calls(_tool_call("search_policy_documents", {"query": "PTO notice", "limit": 2})),
-        _text("You need five calendar days' notice."),
+        _calls(_tool_call(
+            "search_policy_documents", {"query": "PTO notice", "limit": 2}, "call_search"
+        )),
+        _calls(_tool_call("get_policy_section", {
+            "document": "pto_policy.md", "section": "Request and Approval",
+        }, "call_section")),
+        _text(
+            "You need five calendar days' notice. Source: PTO Policy, Request and Approval."
+        ),
     ])
+
+    async def _policy_call(name, _arguments):
+        if name == "search_policy_documents":
+            return [
+                {
+                    "id": "pto_policy-3", "document": "pto_policy.md", "title": "PTO Policy",
+                    "section": "Request and Approval",
+                    "text": "Submit planned PTO at least five calendar days before the first day away.",
+                    "score": 0.9, "support": 1.0,
+                },
+                {
+                    "id": "leave_of_absence_policy-3", "document": "leave_of_absence_policy.md",
+                    "title": "Leave Of Absence Policy", "section": "Requesting a Leave",
+                    "text": "Foreseeable leave normally requires thirty days notice.",
+                    "score": 0.4, "support": 0.4,
+                },
+            ]
+        assert name == "get_policy_section"
+        return [{
+            "id": "pto_policy-3", "document": "pto_policy.md", "title": "PTO Policy",
+            "section": "Request and Approval",
+            "text": "Submit planned PTO at least five calendar days before the first day away.",
+        }]
+
+    monkeypatch.setattr(planner, "discover_tools", _fake_discover_tools)
+    monkeypatch.setattr(planner, "call", _policy_call)
 
     result = asyncio.run(planner.respond("How much PTO notice?", None, False))
 
@@ -131,9 +212,14 @@ def test_planner_dispatches_tool_call_and_records_trace(monkeypatch):
     assert all(request["reasoning_effort"] == "none" for request in stub.seen)
 
     # The tool actually ran through the MCP layer and produced real citations.
-    assert [step["tool"] for step in result["trace"]] == ["search_policy_documents"]
+    assert [step["tool"] for step in result["trace"]] == [
+        "search_policy_documents", "get_policy_section",
+    ]
     assert result["trace"][0]["arguments"] == {"query": "PTO notice", "limit": 2}
-    assert result["citations"], "policy retrieval should yield citations"
+    assert result["citations"] == [{
+        "id": "pto_policy-3", "document": "pto_policy.md", "section": "Request and Approval",
+        "snippet": "Submit planned PTO at least five calendar days before the first day away.",
+    }]
     assert all({"id", "document", "section", "snippet"} <= c.keys() for c in result["citations"])
 
     # Tool definitions were discovered and passed to the model.
@@ -142,10 +228,102 @@ def test_planner_dispatches_tool_call_and_records_trace(monkeypatch):
     }
 
     # The tool result was returned on a tool-role message keyed to the call id.
-    followup = stub.seen[1]["messages"]
+    followup = stub.seen[2]["messages"]
     assert followup[-1]["role"] == "tool"
-    assert followup[-1]["tool_call_id"] == "call_stub"
+    assert followup[-1]["tool_call_id"] == "call_section"
     assert followup[-2]["role"] == "assistant" and followup[-2]["tool_calls"]
+
+
+def test_final_citations_select_direct_support_not_every_search_hit():
+    """A broad MCP search remains traceable without becoming citation noise."""
+    candidates = [
+        planner._citation_candidate({
+            "id": "pto_policy-3", "document": "pto_policy.md", "title": "PTO Policy",
+            "section": "Request and Approval",
+            "text": "Submit planned PTO at least five calendar days before the first day away.",
+            "score": 0.9, "support": 1.0,
+        }, "search_policy_documents", 0),
+        planner._citation_candidate({
+            "id": "leave_of_absence_policy-3", "document": "leave_of_absence_policy.md",
+            "title": "Leave Of Absence Policy", "section": "Requesting a Leave",
+            "text": "Foreseeable leave normally requires thirty days notice.",
+            "score": 0.4, "support": 0.4,
+        }, "search_policy_documents", 1),
+        planner._citation_candidate({
+            "id": "pto_policy-8", "document": "pto_policy.md", "title": "PTO Policy",
+            "section": "Common Questions",
+            "text": "A manager cannot override the balance block.",
+            "score": 0.3, "support": 0.3,
+        }, "search_policy_documents", 2),
+    ]
+
+    citations = planner._select_final_citations(
+        "PTO Policy, Request and Approval: submit the request five calendar days before leave.",
+        [candidate for candidate in candidates if candidate is not None],
+    )
+
+    assert [citation["id"] for citation in citations] == ["pto_policy-3"]
+
+
+def test_final_citations_use_one_strongest_result_when_answer_omits_source_name():
+    candidates = [
+        planner._citation_candidate({
+            "id": "pto_policy-3", "document": "pto_policy.md", "title": "PTO Policy",
+            "section": "Request and Approval",
+            "text": "Submit planned PTO at least five calendar days before the first day away.",
+            "score": 0.9, "support": 1.0,
+        }, "search_policy_documents", 0),
+        planner._citation_candidate({
+            "id": "leave_of_absence_policy-3", "document": "leave_of_absence_policy.md",
+            "title": "Leave Of Absence Policy", "section": "Requesting a Leave",
+            "text": "Foreseeable leave normally requires thirty days notice.",
+            "score": 0.4, "support": 0.4,
+        }, "search_policy_documents", 1),
+    ]
+
+    citations = planner._select_final_citations(
+        "Submit planned PTO five calendar days before the first day away.",
+        [candidate for candidate in candidates if candidate is not None],
+    )
+
+    assert [citation["id"] for citation in citations] == ["pto_policy-3"]
+
+
+def test_final_citations_recognise_the_written_out_pto_policy_title():
+    candidate = planner._citation_candidate({
+        "id": "pto_policy-6", "document": "pto_policy.md", "title": "PTO Policy",
+        "section": "Interaction with Other Policies",
+        "text": "Longer illness absences may need a leave-of-absence review.",
+        "score": 0.7, "support": 0.7,
+    }, "search_policy_documents", 0)
+
+    citations = planner._select_final_citations(
+        "The Paid Time Off Policy says longer illness absences need a leave review.",
+        [candidate] if candidate is not None else [],
+    )
+
+    assert [citation["id"] for citation in citations] == ["pto_policy-6"]
+
+
+def test_final_citations_prefer_a_targeted_section_over_the_same_search_candidate():
+    search_candidate = planner._citation_candidate({
+        "id": "pto_policy-search", "document": "pto_policy.md", "title": "PTO Policy",
+        "section": "Request and Approval",
+        "text": "Submit planned PTO at least five calendar days before the first day away.",
+        "score": 0.9, "support": 1.0,
+    }, "search_policy_documents", 0)
+    section_candidate = planner._citation_candidate({
+        "id": "pto_policy-section", "document": "pto_policy.md", "title": "PTO Policy",
+        "section": "Request and Approval",
+        "text": "Submit planned PTO at least five calendar days before the first day away.",
+    }, "get_policy_section", 0)
+
+    citations = planner._select_final_citations(
+        "PTO Policy, Request and Approval: give five calendar days' notice.",
+        [candidate for candidate in (search_candidate, section_candidate) if candidate is not None],
+    )
+
+    assert [citation["id"] for citation in citations] == ["pto_policy-section"]
 
 
 def test_non_gpt56_override_keeps_the_existing_chat_request_shape():
@@ -250,6 +428,86 @@ def test_ungrounded_llm_answer_is_rejected(monkeypatch):
     assert result["citations"] == []
 
 
+def test_record_evidence_cannot_ground_a_policy_answer_by_itself(monkeypatch):
+    """A profile lookup is not permission to invent an unrelated policy rule."""
+    _install(monkeypatch, [
+        _calls(_tool_call("lookup_employee_profile", {"employee_id": "E1001"})),
+        _text("You can take any amount of PTO without approval."),
+    ])
+
+    async def _profile_call(name, _arguments):
+        assert name == "lookup_employee_profile"
+        return {"employee_id": "E1001", "manager_name": "Morgan Lee"}
+
+    monkeypatch.setattr(planner, "discover_tools", _fake_discover_tools)
+    monkeypatch.setattr(planner, "call", _profile_call)
+
+    result = asyncio.run(planner.respond("Can I take PTO next week?", "E1001", False))
+
+    assert result["ungrounded"] is True
+    assert result["citations"] == []
+    assert [step["tool"] for step in result["trace"]] == ["lookup_employee_profile"]
+
+
+def test_narrow_record_only_question_can_answer_without_a_policy_citation(monkeypatch):
+    _install(monkeypatch, [
+        _calls(_tool_call("lookup_employee_profile", {"employee_id": "E1001"})),
+        _text("Your manager is Morgan Lee and your office is New York."),
+    ])
+
+    async def _profile_call(name, _arguments):
+        assert name == "lookup_employee_profile"
+        return {"employee_id": "E1001", "manager_name": "Morgan Lee", "office": "New York"}
+
+    monkeypatch.setattr(planner, "discover_tools", _fake_discover_tools)
+    monkeypatch.setattr(planner, "call", _profile_call)
+
+    result = asyncio.run(planner.respond(
+        "Who is my manager and which office am I assigned to?", "E1001", False
+    ))
+
+    assert result["answer"].startswith("Your manager is Morgan Lee")
+    assert result["citations"] == []
+    assert result["planner"] == "llm"
+
+
+def test_narrow_pto_balance_question_can_answer_without_a_policy_citation(monkeypatch):
+    _install(monkeypatch, [
+        _calls(_tool_call("check_pto_balance", {"employee_id": "E1001"})),
+        _text("Your current PTO balance is 40 hours."),
+    ])
+
+    async def _balance_call(name, _arguments):
+        assert name == "check_pto_balance"
+        return {"employee_id": "E1001", "available_hours": 40}
+
+    monkeypatch.setattr(planner, "discover_tools", _fake_discover_tools)
+    monkeypatch.setattr(planner, "call", _balance_call)
+
+    result = asyncio.run(planner.respond("How much PTO do I have left?", "E1001", False))
+
+    assert result["answer"].startswith("Your current PTO balance")
+    assert result["citations"] == []
+    assert result["planner"] == "llm"
+
+
+def test_total_tool_calls_are_bounded_even_when_one_model_turn_has_many(monkeypatch):
+    monkeypatch.setattr(settings, "MAX_TOOL_CALLS", 1)
+    _install(monkeypatch, [
+        _calls(
+            _tool_call("search_policy_documents", {"query": "PTO"}, "call_one"),
+            _tool_call("search_policy_documents", {"query": "benefits"}, "call_two"),
+        ),
+    ])
+    monkeypatch.setattr(planner, "discover_tools", _fake_discover_tools)
+
+    result = asyncio.run(planner.respond("Compare PTO and benefits.", None, False))
+
+    assert result["tool_call_limit_exceeded"] is True
+    assert result["exhausted"] is True
+    assert result["trace"] == []
+
+
 def test_loop_is_bounded(monkeypatch):
     from app import settings
 
@@ -289,14 +547,127 @@ def test_agent_falls_back_when_planner_raises(monkeypatch):
     async def _boom(*_args, **_kwargs):
         raise RuntimeError("provider unavailable")
 
+    @asynccontextmanager
+    async def _no_mcp_session():
+        yield
+
+    async def _fallback(*_args, **_kwargs):
+        return {
+            "answer": "Fallback answer from synthetic policy evidence.",
+            "citations": [],
+            "trace": [],
+            "planner": "deterministic",
+        }
+
     monkeypatch.setattr(planner, "respond", _boom)
+    monkeypatch.setattr(agent, "request_session", _no_mcp_session)
+    monkeypatch.setattr(agent, "_deterministic_respond", _fallback)
 
     result = asyncio.run(agent.respond("How much PTO notice is required?", None, False))
 
     assert result["planner"] == "deterministic-fallback"
     assert "provider unavailable" in result["planner_error"]
-    assert result["answer"]
-    assert "give at least three  This is policy guidance" not in result["answer"]
+    assert result["answer"] == "Fallback answer from synthetic policy evidence."
+
+
+@pytest.mark.parametrize(
+    ("message", "employee_id", "expected_flag", "expected_planner"),
+    [
+        ("How much PTO do I have left?", None, "needs_clarification", "clarification-gate"),
+        ("Am I eligible?", None, "needs_clarification", "clarification-gate"),
+        ("Can I get reimbursed for this?", "E1001", "needs_clarification", "clarification-gate"),
+        ("What is the capital of France?", None, "out_of_corpus", "scope-gate"),
+    ],
+)
+def test_scope_and_clarification_gates_run_before_the_llm(
+    monkeypatch, message, employee_id, expected_flag, expected_planner
+):
+    """An API key must not make the deterministic preflight controls disappear."""
+    from app import agent, settings
+
+    monkeypatch.setattr(settings, "llm_enabled", lambda: True)
+
+    async def _should_not_run(*_args, **_kwargs):
+        raise AssertionError("preflight response must not call the LLM")
+
+    monkeypatch.setattr(planner, "respond", _should_not_run)
+
+    result = asyncio.run(agent.respond(message, employee_id, False))
+
+    assert result[expected_flag] is True
+    assert result["planner"] == expected_planner
+    assert result["trace"] == []
+
+
+def test_pto_notice_policy_question_is_not_misclassified_as_a_personal_balance_lookup():
+    """A PTO-notice request asks for policy, not an undisclosed employee record."""
+    from app import agent
+
+    assert agent._preflight_response("How much PTO notice is required?", None) is None
+
+
+def test_unsupported_jurisdiction_is_refused_with_mcp_evidence(monkeypatch):
+    """Do not extrapolate a US policy entitlement to a foreign jurisdiction."""
+    from app import agent, settings
+
+    monkeypatch.setattr(settings, "llm_enabled", lambda: True)
+
+    @asynccontextmanager
+    async def _no_mcp_session():
+        yield
+
+    async def _evidence_call(name, arguments):
+        assert name == "search_policy_documents"
+        assert "United States policy scope" in arguments["query"]
+        return [{
+            "id": "leave-1",
+            "document": "leave_of_absence_policy.md",
+            "section": "Purpose and Scope",
+            "text": "This policy applies to regular employees in the United States.",
+        }]
+
+    async def _should_not_run(*_args, **_kwargs):
+        raise AssertionError("jurisdiction gate must not call the LLM")
+
+    monkeypatch.setattr(agent, "request_session", _no_mcp_session)
+    monkeypatch.setattr(agent, "call", _evidence_call)
+    monkeypatch.setattr(planner, "respond", _should_not_run)
+
+    result = asyncio.run(agent.respond(
+        "What is the company's parental leave entitlement for employees in Germany?", None, False
+    ))
+
+    assert result["out_of_corpus"] is True
+    assert result["planner"] == "jurisdiction-gate"
+    assert "United States employees only" in result["answer"]
+    assert [step["tool"] for step in result["trace"]] == ["search_policy_documents"]
+    assert result["citations"][0]["section"] == "Purpose and Scope"
+
+
+def test_device_security_incident_uses_deterministic_mcp_guard(monkeypatch):
+    """A stolen device must not depend on a model remembering incident guidance."""
+    from app import agent, settings
+
+    monkeypatch.setattr(settings, "llm_enabled", lambda: True)
+
+    @asynccontextmanager
+    async def _no_mcp_session():
+        yield
+
+    async def _incident_response(*_args, **_kwargs):
+        return {"answer": "Report to Security immediately.", "citations": [], "trace": []}
+
+    async def _should_not_run(*_args, **_kwargs):
+        raise AssertionError("security incident must not call the LLM")
+
+    monkeypatch.setattr(agent, "request_session", _no_mcp_session)
+    monkeypatch.setattr(agent, "_deterministic_respond", _incident_response)
+    monkeypatch.setattr(planner, "respond", _should_not_run)
+
+    result = asyncio.run(agent.respond("My laptop was stolen from a cafe.", None, False))
+
+    assert result["planner"] == "security-incident-gate"
+    assert result["answer_basis"] == "MCP policy retrieval + deterministic security-incident guard"
 
 
 def test_evidence_excerpt_ends_on_a_complete_sentence():
@@ -459,3 +830,65 @@ def test_planner_error_detail_is_returned_when_explicitly_enabled(monkeypatch):
     assert detail["code"] == "insufficient_quota"
     assert "message" not in detail, "raw exception text belongs in the log, not the response"
     assert result["answer"] == "Fallback answer."
+
+
+@pytest.mark.parametrize("message", [
+    "What is the company's parental leave entitlement for employees in Germany?",
+    "What is the statutory holiday entitlement in France?",
+    "Are employees in Ireland legally entitled to more notice?",
+    "What does Japanese employment law require for overtime?",
+    "What is the works council process in the Netherlands?",
+])
+def test_foreign_law_questions_are_refused_for_any_country(monkeypatch, message):
+    """The jurisdiction gate must generalise, not recognise one benchmark country."""
+    from app import agent, settings
+
+    monkeypatch.setattr(settings, "llm_enabled", lambda: True)
+
+    async def _should_not_run(*_args, **_kwargs):
+        raise AssertionError("a foreign-law question must not reach the planner")
+
+    monkeypatch.setattr(planner, "respond", _should_not_run)
+
+    result = asyncio.run(agent.respond(message, "E1001", False))
+
+    assert result["planner"] == "jurisdiction-gate"
+    assert result["out_of_corpus"] is True
+    assert "United States" in result["answer"]
+    # The refusal is grounded: the corpus was searched and the trace shows it.
+    assert result["trace"] and result["trace"][0]["tool"] == "search_policy_documents"
+
+
+@pytest.mark.parametrize("message", [
+    "I am based in California and want to work from Portugal for six weeks. "
+    "What approvals and security requirements apply?",
+    "Can I work from Spain temporarily?",
+    "What do I need to arrange before working overseas for a month?",
+])
+def test_working_abroad_under_our_policy_is_still_answered(monkeypatch, message):
+    """Naming a country is in scope: the remote-work policy has an International Work section.
+
+    Only a question about that country's own statutory position is out of scope.
+    This guards demo task 2, which asks about working from Portugal.
+    """
+    from app import agent
+
+    assert agent._asks_about_foreign_law(message) is False
+
+
+def test_foreign_law_gate_needs_both_a_country_and_a_legal_term():
+    from app import agent
+
+    # An entitlement question about US employees stays in scope.
+    assert agent._asks_about_foreign_law("What is my PTO entitlement?") is False
+    # A country alone stays in scope.
+    assert agent._asks_about_foreign_law("Can I work from Germany?") is False
+    # Both together are out of scope.
+    assert agent._asks_about_foreign_law("What is the entitlement in Germany?") is True
+
+
+def test_refusal_names_the_country_the_user_asked_about():
+    from app import agent
+
+    assert agent._named_jurisdiction("statutory entitlement in France?") == "France"
+    assert agent._named_jurisdiction("legal minimum in Japan?") == "Japan"

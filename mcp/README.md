@@ -64,9 +64,11 @@ served live at `GET /tools`.
 
 1. `app/mcp_client.discover_tools()` calls `list_tools()` and returns each tool's
    name, description, and JSON Schema.
-2. `app/planner._to_openai_tools()` maps those schemas onto the Chat Completions
-   `tools` shape. Nothing is hard-coded — a tool added to `mcp_server.py` becomes
-   available to the model with no change to the planner.
+2. `app/planner._authorised_tools()` checks each discovered schema against the
+   explicit capability policy, then `app/planner._to_openai_tools()` maps the
+   authorised schemas onto the Chat Completions `tools` shape. Discovery remains
+   live, but a newly added MCP tool is **not** model-callable until it has been
+   deliberately classified for its safety, identity-binding, and cost policy.
 3. The model returns a `tool_calls` entry. The planner decodes its JSON argument
    string and passes the name and arguments to `app/mcp_client.call()`, which
    invokes `call_tool()`.

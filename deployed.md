@@ -11,8 +11,14 @@ and `mcp_tool_count: 6`, and `/chat` reported `planner: "llm"` — the live
 LLM planner, not the deterministic fallback.
 
 The 29-case evaluation in `evaluation/results.md` was run against this URL over
-HTTP. It recorded 29/29 HTTP success with client-observed latency of
-**2671 ms p50 and 4960 ms p95**, which includes real provider time.
+HTTP and recorded 29/29 HTTP success. Its client-observed p50/p95 latency lives
+in that generated report so a later re-run cannot leave duplicate deployment
+numbers out of sync; the figures include real provider time.
+
+Treat those figures as evidence for the deployed revision that produced them,
+not for later source changes. After any planner, RAG, MCP-tool-policy, or
+safety change is deployed, re-run the public evaluation and replace the report
+and artifacts before presenting the result.
 
 A Railway service exists from earlier testing and is **not** part of the
 submission. It has no API key configured and answers on the deterministic

@@ -27,7 +27,9 @@ from .settings import INDEX_PATH, POLICY_DIR
 DIMENSIONS = 2 ** 18
 TOKEN_RE = re.compile(r"[a-zA-Z][a-zA-Z0-9'-]{1,}")
 
-# The section heading is a strong topical signal, so its tokens are counted extra.
+# Document title and section heading are strong topical signals. They are counted
+# extra so that a query such as "security requirements" can retrieve a relevant
+# section even when the body uses more specific wording than the query.
 HEADING_WEIGHT = 3
 
 # A token is "distinctive" when it is rare enough across the corpus to carry
@@ -248,13 +250,31 @@ def build_index() -> dict[str, Any]:
                 "format": path.suffix.lstrip("."), **chunk,
             })
 
-    idf = build_idf([f"{chunk['section']} {chunk['text']}" for chunk in staged])
+    # Include stable document metadata in both IDF and vectors. It is useful
+    # retrieval context (for example "data security" or "benefits") rather
+    # than a decorative label, and avoids relying only on the prose body.
+    idf = build_idf([
+        f"{chunk['document']} {chunk['title']} {chunk['section']} {chunk['text']}"
+        for chunk in staged
+    ])
     records = [
-        {**chunk, "embedding": embed(chunk["text"], idf, heading=chunk["section"])}
+        {
+            **chunk,
+            "embedding": embed(
+                chunk["text"],
+                idf,
+                heading=f"{chunk['document']} {chunk['title']} {chunk['section']}",
+            ),
+        }
         for chunk in staged
     ]
 
-    index = {"version": 3, "embedding": "sparse-hash-idf", "idf": idf, "chunks": records}
+    index = {
+        "version": 4,
+        "embedding": "sparse-hash-idf+document-metadata",
+        "idf": idf,
+        "chunks": records,
+    }
     INDEX_PATH.write_text(json.dumps(index), encoding="utf-8")
     return index
 
@@ -264,6 +284,8 @@ def load_index() -> dict[str, Any]:
 
 
 def search(query: str, limit: int = 4) -> list[dict[str, Any]]:
+    if limit <= 0:
+        return []
     index = load_index()
     idf = index.get("idf")
     query_vector = embed(query, idf)
@@ -271,7 +293,9 @@ def search(query: str, limit: int = 4) -> list[dict[str, Any]]:
 
     matches = []
     for item in index["chunks"]:
-        present = wanted & set(_tokens(f"{item['section']} {item['text']}"))
+        present = wanted & set(_tokens(
+            f"{item['document']} {item['title']} {item['section']} {item['text']}"
+        ))
         matches.append(
             {k: v for k, v in item.items() if k != "embedding"}
             | {

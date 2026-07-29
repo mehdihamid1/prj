@@ -38,7 +38,7 @@ Open `http://127.0.0.1:8000` and try `E1001` with *"Can I take three days of PTO
 | `GET /health` | App status and MCP connectivity |
 | `GET /tools` | Live MCP tool schemas as discovered by the agent |
 
-**Without an API key the app still runs.** It falls back to a deterministic rule-based planner over the same MCP tools, so every endpoint works and the test suite passes with no credentials. With `OPENAI_API_KEY` set, an LLM chooses the tools instead. The default model is the cost-sensitive `gpt-5.6-luna`; it requires a funded account with access to that model. In that mode, the user prompt and the tool schemas/results needed for the turn are sent to OpenAI; use this only with the repository's synthetic coursework data. Before recording the demo, use a real key and rerun the evaluation.
+**Without an API key the app still runs.** It falls back to a deterministic rule-based planner over the same MCP tools, so every endpoint works and the test suite passes with no credentials. With `OPENAI_API_KEY` set, an LLM chooses the tools instead. The default model is the cost-sensitive `gpt-5.6-luna`; it requires a funded account with access to that model. In that mode, the user prompt and the tool schemas/results needed for the turn are sent to OpenAI; use this only with the repository's synthetic coursework data. Render has already produced a live-LLM HTTP evaluation; re-run it whenever a new planner or guardrail revision is deployed.
 
 ClearHR keeps its explicit Chat Completions + MCP function-tool loop. For GPT-5.6, it explicitly sends `reasoning_effort="none"`, which is required for that endpoint's function-tool compatibility. Moving the planner to the Responses API to combine model reasoning with tools is a separate, unimplemented migration.
 
@@ -46,11 +46,11 @@ If a non-empty key produces `planner: "deterministic-fallback"`, the provider ca
 
 ## Corpus
 
-14 synthetic policy documents, 15,969 words, in three formats — 11 Markdown, 2 HTML, 1 plain text — covering PTO, holidays, remote work, expenses, travel, equipment, benefits, leave, onboarding, data security, workplace conduct, compensation, performance, and health and safety. All three formats are parsed heading-aware so citations carry a real section name. The index is rebuilt deterministically at startup; there is no seed to set.
+14 synthetic policy documents, 15,969 words, in three formats — 11 Markdown, 2 HTML, 1 plain text — covering PTO, holidays, remote work, expenses, travel, equipment, benefits, leave, onboarding, data security, workplace conduct, compensation, performance, and health and safety. All three formats are parsed heading-aware so citations carry a real section name. Retrieval uses sparse IDF vectors plus document/section metadata. The trace preserves all returned evidence; the final citation list is deliberately limited to chunks that directly support the answer. The index is rebuilt deterministically at startup; there is no seed to set.
 
 ## MCP tools
 
-Six tools: `search_policy_documents`, `get_policy_section`, `lookup_employee_profile`, `check_pto_balance`, `lookup_benefits_status`, and `create_mock_hr_ticket`. Two read the RAG index, four read or draft against synthetic records. Schemas are generated from type hints and served live at `/tools`. See [mcp/README.md](mcp/README.md).
+Six tools: `search_policy_documents`, `get_policy_section`, `lookup_employee_profile`, `check_pto_balance`, `lookup_benefits_status`, and `create_mock_hr_ticket`. Two read the RAG index, four read or draft against synthetic records. Schemas are generated from type hints and served live at `/tools`. The LLM receives dynamically discovered schemas only for the explicitly authorised tool capabilities; a future MCP tool must be classified before it becomes model-callable. See [mcp/README.md](mcp/README.md).
 
 The deployed web service starts the MCP server as a local subprocess and calls it over stdio. It remains one free-tier service, but tool execution still crosses a real MCP protocol boundary:
 
@@ -106,12 +106,18 @@ python -m evaluation.run_eval --base-url https://your-service.example
 
 ## Submission checklist
 
+- [x] Repository contains all developed code and the required artefacts: this README,
+      `design-and-evaluation.md`, `ai-tooling.md`, `deployed.md`, `evaluation/`,
+      `mock_data/`, and `mcp/` documentation/tool definitions
 - [x] Deploy and record the live URL and `/health` URL in [deployed.md](deployed.md)
-- [ ] Re-run the evaluation with `OPENAI_API_KEY` set and commit [evaluation/results.md](evaluation/results.md)
+- [x] Run and commit a 29-case live-LLM HTTP evaluation against Render
+- [ ] Deploy the current guardrail revision, then re-run and commit the public evaluation
 - [ ] Share the repository with the `quantic-grader` GitHub account
 - [ ] Record the 7–10 minute demo: two agentic tasks end to end, narrating tool names, arguments, outputs, citations, and the final answer, then a walkthrough of design, deployment, CI/CD, and evaluation
+- [ ] Submit through the course dashboard. For a group, one member submits on behalf of
+      the group and uploads the signed final page of the Group Project Agreement if asked
 
-Known gaps, unverified paths, and deliberate trade-offs are tracked in [OPEN_ITEMS.md](OPEN_ITEMS.md), including the still-required live LLM and deployed-host evaluations.
+Known gaps, verified evidence, and deliberate trade-offs are tracked in [OPEN_ITEMS.md](OPEN_ITEMS.md), including the semantic-vector-store rubric risk, cold-start measurement, the post-deploy evaluation rerun, and the remaining submission actions.
 
 ## AI assistance
 

@@ -40,7 +40,7 @@ The MCP boundary and the automated tests both paid for themselves. Because tool 
 ## What required human review
 
 - **Measured numbers.** Every metric in `evaluation/results.md` comes from a run of `evaluation/run_eval.py`. Nothing was written by hand, and the harness labels its groundedness metric as an automatic proxy rather than presenting it as the real measurement.
-- **Untested paths are marked as untested.** No API key was available while this work was done, so the LLM planner's loop is covered by tests against a stub client but its answer quality has not been measured. The results file records which planner produced it. This is stated in the README and the design document rather than glossed.
+- **Live paths are labelled with their actual evidence.** The first planner pass had no API key, so its loop was initially covered only by a stub client. A later 29-case Render HTTP run produced live `planner: "llm"` artifacts alongside deterministic safety-gate cases; it is recorded in `evaluation/results.md` rather than described as a perfect or all-LLM result. Any later planner or guardrail change requires a new deployed run, and the response alone does not prove a host's exact model override or commit.
 - **Volume claims.** "About 30 pages" is an estimate from word count at roughly 500 words per page, not a rendered page count.
 - **Policy content.** All fourteen documents are fictional and were checked to make sure nothing reads as advice about a real organisation.
 - **Secrets.** `.env` is git-ignored, `.env.example` carries no value, and no key appears in any committed file.
@@ -53,6 +53,11 @@ process-local public-demo rate limits, explicit UI confirmation, tool-boundary
 confirmation enforcement, identity binding for LLM record lookups, redacted
 sensitive escalation traces, and a stronger evaluator with deployed-HTTP mode.
 The pass also corrected the documentation and added the presentation runbook.
+
+After the first live evaluation exposed that API-key deployments bypassed some
+fallback-only guards, Codex moved clarification, scope, jurisdiction, and
+lost-device incident controls ahead of the LLM. It also added explicit MCP tool
+capability authorisation, a total tool-call budget, and tests for those paths.
 
 **What worked well.** A focused audit against the actual running paths exposed
 issues that a structural review missed: a health endpoint that could return 200

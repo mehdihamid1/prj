@@ -1,9 +1,10 @@
 """LLM planner: an explicit tool-use loop over the MCP-exposed tools.
 
 The model is never given direct access to the policy index or the employee
-records. It sees only the tool schemas discovered from the MCP server, and every
-call it requests is dispatched through `app.mcp_client`. That keeps the MCP
-boundary load-bearing rather than decorative.
+records. It sees only the dynamically discovered MCP schemas that the agent has
+explicitly authorised, and every call it requests is dispatched through
+`app.mcp_client`. That keeps the MCP boundary load-bearing rather than
+decorative.
 
 Two guarantees are enforced in code rather than by prompting, because a prompt is
 not a control:
@@ -15,6 +16,7 @@ not a control:
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 from . import settings
@@ -29,13 +31,6 @@ retrieve the policy first with search_policy_documents, and use get_policy_secti
 need the full text of a section you have already identified.
 - For a question about a specific person's balance, profile, or benefits, call the \
 corresponding lookup tool. Do not guess or infer someone's data.
-- When an employee ID is supplied, always call lookup_employee_profile as well, even if \
-another record tool already answers the question. The profile carries the employment type, \
-work location, and approving manager that decide whether a policy rule applies to this \
-person, and a personalised answer should name them.
-- Prefer one broad search_policy_documents call over several narrow ones. Use \
-get_policy_section only for a section you have already identified and still need in full; \
-do not fetch every section a search returned.
 - When you have enough evidence, answer. Do not keep calling tools once you can answer.
 
 Grounding rules:
@@ -45,8 +40,12 @@ fill gaps from general knowledge about how companies usually work.
 - If the question is not about HR policy or this employee's records, decline briefly and \
 say what you can help with. Do not answer general-knowledge questions.
 - Quote or closely paraphrase the policy, and name the document and section you used.
+- Search results are discovery evidence. Cite only the document sections that directly \
+support your final answer; do not present every retrieved result as a source.
 - Distinguish what the policy states from what you are suggesting. Label suggestions as \
 suggestions.
+- Never invent an employee field, schedule, approval, or entitlement that was not returned \
+by a tool. State the uncertainty and the next safe step instead.
 - You are not giving legal, tax, or medical advice. Say so when a question edges into it.
 
 Identity and safety:
@@ -60,12 +59,38 @@ for it instead of answering generically. Do not guess an ID.
 Style: answer in short paragraphs. Lead with the answer, then the supporting policy detail. \
 Do not use headers for a short answer."""
 
-RECORD_TOOLS = frozenset({
-    "lookup_employee_profile", "check_pto_balance", "lookup_benefits_status", "create_mock_hr_ticket",
-})
-POLICY_TOOLS = frozenset({"search_policy_documents", "get_policy_section"})
+# Discovery makes a tool schema available without duplicating it in the
+# planner. Authorisation is intentionally explicit: a future MCP tool must be
+# classified before an LLM can invoke it, rather than inheriting the weaker
+# rules intended for today's read-only tools.
+TOOL_CAPABILITIES = {
+    "search_policy_documents": "policy_read",
+    "get_policy_section": "policy_read",
+    "lookup_employee_profile": "record_read",
+    "check_pto_balance": "record_read",
+    "lookup_benefits_status": "record_read",
+    "create_mock_hr_ticket": "mock_write",
+}
+POLICY_TOOLS = frozenset(
+    name for name, capability in TOOL_CAPABILITIES.items() if capability == "policy_read"
+)
+READ_RECORD_TOOLS = frozenset(
+    name for name, capability in TOOL_CAPABILITIES.items() if capability == "record_read"
+)
+MOCK_WRITE_TOOLS = frozenset(
+    name for name, capability in TOOL_CAPABILITIES.items() if capability == "mock_write"
+)
+RECORD_TOOLS = READ_RECORD_TOOLS | MOCK_WRITE_TOOLS
 TRACE_PREVIEW_ITEMS = 4
 TRACE_PREVIEW_CHARS = 240
+MAX_FINAL_CITATIONS = 4
+_CITATION_TOKEN_RE = re.compile(r"[a-z0-9]{2,}")
+_CITATION_STOP_TERMS = frozenset({
+    "about", "after", "before", "between", "clearhr", "company", "document", "employee",
+    "employees", "from", "have", "into", "must", "only", "policy", "section", "should",
+    "that", "their", "there", "these", "this", "used", "with", "would",
+})
+_GENERIC_SECTION_NAMES = frozenset({"common questions", "purpose and scope"})
 
 
 def _chat_tool_model_options(model: str) -> dict[str, str]:
@@ -100,6 +125,16 @@ def _to_openai_tools(discovered: list[dict[str, Any]]) -> list[dict[str, Any]]:
         }
         for tool in discovered
     ]
+
+
+def _authorised_tools(discovered: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Keep schema discovery dynamic while denying unclassified MCP capabilities.
+
+    The result deliberately preserves the server-provided schema and
+    description. Only the capability name is maintained in code, where it can
+    receive an ID-binding, confirmation, citation, and cost policy review.
+    """
+    return [tool for tool in discovered if tool.get("name") in TOOL_CAPABILITIES]
 
 
 def _decode_arguments(raw: Any) -> tuple[dict[str, Any], dict[str, Any] | None]:
@@ -199,6 +234,132 @@ def _citation(item: dict[str, Any]) -> dict[str, Any] | None:
     }
 
 
+def _normalise_citation_text(value: object) -> str:
+    """Normalise text for conservative, deterministic citation selection."""
+    return " ".join(_CITATION_TOKEN_RE.findall(str(value).lower()))
+
+
+def _citation_terms(value: object) -> set[str]:
+    return {
+        term for term in _CITATION_TOKEN_RE.findall(str(value).lower())
+        if term not in _CITATION_STOP_TERMS
+    }
+
+
+def _title_is_mentioned(title: str, answer_normalised: str) -> bool:
+    """Recognise a written-out policy title as well as a familiar acronym."""
+    normalised_title = _normalise_citation_text(title)
+    variants = {normalised_title}
+    if "pto" in normalised_title.split():
+        variants.add(normalised_title.replace("pto", "paid time off"))
+    return any(variant and variant in answer_normalised for variant in variants)
+
+
+def _citation_candidate(
+    item: dict[str, Any], source_tool: str, source_rank: int
+) -> dict[str, Any] | None:
+    """Retain internal context needed to select final citations later.
+
+    Search results stay in the public trace in full. This separate collection
+    lets the final answer cite the evidence it actually uses rather than every
+    chunk returned by a broad search.
+    """
+    citation = _citation(item)
+    if citation is None:
+        return None
+    title = item.get("title")
+    if not isinstance(title, str) or not title.strip():
+        title = citation["document"].rsplit(".", 1)[0].replace("_", " ")
+    support = item.get("support", 0.0)
+    score = item.get("score", 0.0)
+    return {
+        "citation": citation,
+        "title": title,
+        "source_tool": source_tool,
+        "source_rank": source_rank,
+        "support": float(support) if isinstance(support, (int, float)) else 0.0,
+        "retrieval_score": float(score) if isinstance(score, (int, float)) else 0.0,
+        "terms": _citation_terms(f"{title} {citation['section']} {item['text']}"),
+    }
+
+
+def _select_final_citations(
+    answer: str, candidates: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """Return a small, diverse set of evidence that directly supports ``answer``.
+
+    The LLM receives all MCP results and the demo trace preserves all of them.
+    The user-facing citation list is intentionally narrower: it prioritises
+    sections the answer explicitly names, then lexical overlap with the answer,
+    and keeps at most one section from each document before adding detail.
+    This prevents a broad search from making unrelated retrieved chunks appear
+    to support the final response.
+    """
+    if not candidates:
+        return []
+
+    answer_normalised = _normalise_citation_text(answer)
+    answer_terms = _citation_terms(answer)
+    scored: list[tuple[tuple[Any, ...], dict[str, Any]]] = []
+    for candidate in candidates:
+        citation = candidate["citation"]
+        section = _normalise_citation_text(citation["section"])
+        section_is_specific = section not in _GENERIC_SECTION_NAMES
+        section_mentioned = bool(section and section_is_specific and section in answer_normalised)
+        title_mentioned = _title_is_mentioned(candidate["title"], answer_normalised)
+        overlap = len(answer_terms & candidate["terms"])
+        ranked = (
+            int(section_mentioned),
+            int(title_mentioned),
+            int(candidate["source_tool"] == "get_policy_section"),
+            overlap,
+            candidate["support"],
+            candidate["retrieval_score"],
+            -candidate["source_rank"],
+        )
+        scored.append((ranked, candidate))
+
+    # Discard duplicate chunks from a long policy section before selection.
+    best_section: dict[tuple[str, str], tuple[tuple[Any, ...], dict[str, Any]]] = {}
+    for ranked, candidate in scored:
+        citation = candidate["citation"]
+        key = (citation["document"], citation["section"])
+        if key not in best_section or ranked > best_section[key][0]:
+            best_section[key] = (ranked, candidate)
+    ordered = sorted(best_section.values(), key=lambda item: item[0], reverse=True)
+
+    # Prefer evidence that the final answer identifies by document or section.
+    # If the model failed to name its source, retain only the strongest returned
+    # evidence instead of reinstating every search hit.
+    named = [item for item in ordered if item[0][0] or item[0][1]]
+    if not named:
+        return [ordered[0][1]["citation"]]
+
+    selected: list[dict[str, Any]] = []
+    selected_documents: set[str] = set()
+    for _ranked, candidate in named:
+        document = candidate["citation"]["document"]
+        if document in selected_documents:
+            continue
+        selected.append(candidate["citation"])
+        selected_documents.add(document)
+        if len(selected) >= MAX_FINAL_CITATIONS:
+            return selected
+
+    # Once each directly named document has one supporting section, include a
+    # small amount of additional named detail, never the entire search output.
+    for ranked, candidate in named:
+        if not ranked[0]:
+            continue
+        citation = candidate["citation"]
+        if citation in selected:
+            continue
+        selected.append(citation)
+        if len(selected) >= MAX_FINAL_CITATIONS:
+            break
+    return selected
+
+
 def _evidence_required_result(trace: list[dict[str, Any]], citations: list[dict[str, Any]]) -> dict[str, Any]:
     """Fail closed if the model answers without MCP evidence."""
     return {
@@ -214,6 +375,38 @@ def _evidence_required_result(trace: list[dict[str, Any]], citations: list[dict[
     }
 
 
+def _tool_limit_result(trace: list[dict[str, Any]], citations: list[dict[str, Any]]) -> dict[str, Any]:
+    """Fail safely when a model attempts more MCP calls than the request budget."""
+    return {
+        "answer": (
+            "I gathered some evidence but reached the request's tool-call safety limit before "
+            "settling on a response. Please narrow the question or contact People Operations."
+        ),
+        "citations": citations,
+        "trace": trace,
+        "planner": "llm",
+        "exhausted": True,
+        "tool_call_limit_exceeded": True,
+    }
+
+
+def _is_record_only_question(message: str) -> bool:
+    """Allow citation-free answers only for intentionally narrow record lookups."""
+    normalized = message.lower()
+    pto_balance_only = (
+        ("pto balance" in normalized or "how much pto" in normalized or "how many pto" in normalized)
+        and not any(term in normalized for term in (
+            "take", "request", "vacation", "time off", "day", "week", "approval", "notice",
+        ))
+    )
+    return (
+        "which benefits plans" in normalized
+        or ("plans" in normalized and "enrolled" in normalized)
+        or ("who is my manager" in normalized and "office" in normalized)
+        or pto_balance_only
+    )
+
+
 async def respond(
     message: str,
     employee_id: str | None = None,
@@ -227,8 +420,10 @@ async def respond(
         timeout=settings.LLM_TIMEOUT_SECONDS,
         max_retries=settings.LLM_MAX_RETRIES,
     )
-    tools = _to_openai_tools(await discover_tools())
+    tools = _to_openai_tools(_authorised_tools(await discover_tools()))
     allowed_tools = {tool["function"]["name"] for tool in tools}
+    if not tools:
+        raise RuntimeError("No authorised MCP tools are available to the planner.")
 
     context = f"Employee ID supplied by the user: {employee_id}" if employee_id else \
         "No employee ID was supplied. Ask for one if the question depends on personal records."
@@ -238,7 +433,7 @@ async def respond(
     ]
 
     trace: list[dict[str, Any]] = []
-    citations: list[dict[str, Any]] = []
+    citation_candidates: list[dict[str, Any]] = []
     tools_used: list[str] = []
     record_evidence = False
 
@@ -267,7 +462,8 @@ async def respond(
         tool_calls = list(getattr(reply, "tool_calls", None) or [])
         if not tool_calls:
             answer = reply.content or ""
-            if not citations and not record_evidence:
+            citations = _select_final_citations(answer, citation_candidates)
+            if not citations and not (record_evidence and _is_record_only_question(message)):
                 return _evidence_required_result(trace, citations)
             return {
                 "answer": answer.strip() or "I could not produce an answer. Please contact HR.",
@@ -277,6 +473,9 @@ async def respond(
                 "answer_basis": f"MCP tools: {', '.join(dict.fromkeys(tools_used))}" if tools_used
                 else "No tool evidence retrieved",
             }
+
+        if len(trace) + len(tool_calls) > settings.MAX_TOOL_CALLS:
+            return _tool_limit_result(trace, [])
 
         # Echo the assistant turn back verbatim: Chat Completions rejects a tool
         # result whose tool_call_id was not announced in the preceding message.
@@ -318,7 +517,7 @@ async def respond(
             trace.append(_trace_step(name, arguments, output))
 
             if (
-                name in RECORD_TOOLS
+                name in READ_RECORD_TOOLS
                 and isinstance(output, dict)
                 and "error" not in output
                 and not output.get("is_error")
@@ -326,9 +525,11 @@ async def respond(
                 record_evidence = True
 
             if name in POLICY_TOOLS and isinstance(output, list):
-                citations.extend(
-                    citation for item in output if isinstance(item, dict)
-                    if (citation := _citation(item)) is not None
+                citation_candidates.extend(
+                    candidate
+                    for source_rank, item in enumerate(output)
+                    if isinstance(item, dict)
+                    if (candidate := _citation_candidate(item, name, source_rank)) is not None
                 )
 
             messages.append({
@@ -342,7 +543,7 @@ async def respond(
             "I gathered evidence but could not settle on an answer within the step limit. "
             "Please rephrase, or contact HR directly."
         ),
-        "citations": citations,
+        "citations": [],
         "trace": trace,
         "planner": "llm",
         "exhausted": True,

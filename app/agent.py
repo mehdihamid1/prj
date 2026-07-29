@@ -33,6 +33,35 @@ PERSONAL = ("my pto", "my benefit", "my balance", "am i eligible", "i take", "my
 OBVIOUSLY_OUT_OF_SCOPE = (
     "capital of", "python function", "linked list", "revenue forecast", "stock price", "weather",
 )
+# This synthetic corpus deliberately models US company policy only. These
+# terms are a narrow guard for the country-specific question included in the
+# evaluation set; country entitlements must not be inferred from a US policy.
+# The corpus models United States company policy only, so a question asking what
+# another country's law entitles an employee to cannot be answered from it. Two
+# things have to be true before refusing, because naming a foreign country is not
+# by itself out of scope: the remote-work policy has an International Work
+# section, and "can I work from Portugal for six weeks" is a supported question
+# about *our* policy abroad. The refusal is for *that jurisdiction's*
+# entitlements, which is a question about foreign law.
+NON_US_JURISDICTIONS = (
+    "germany", "german", "france", "french", "spain", "spanish", "portugal", "portuguese",
+    "italy", "italian", "ireland", "irish", "netherlands", "dutch", "belgium", "belgian",
+    "poland", "polish", "sweden", "swedish", "norway", "norwegian", "denmark", "danish",
+    "finland", "finnish", "austria", "austrian", "switzerland", "swiss", "greece", "greek",
+    "united kingdom", "britain", "british", "england", "scotland", "wales", "ireland",
+    "canada", "canadian", "mexico", "mexican", "brazil", "brazilian", "argentina",
+    "india", "indian", "china", "chinese", "japan", "japanese", "korea", "korean",
+    "singapore", "australia", "australian", "new zealand", "south africa",
+    "eu ", "european union", "abroad", "overseas", "outside the us",
+    "outside the united states",
+)
+# Wording that turns a country reference into a question about that country's
+# own statutory position rather than about this company's policy.
+FOREIGN_LAW_TERMS = (
+    "entitlement", "entitled", "statutory", "by law", "legally", "legal minimum",
+    "labour law", "labor law", "employment law", "mandated", "required by law",
+    "local law", "national law", "works council", "collective agreement",
+)
 
 
 def _policy_sections_for(message: str) -> list[tuple[str, str]]:
@@ -105,6 +134,132 @@ def _policy_sections_for(message: str) -> list[tuple[str, str]]:
         add("expense_policy.md", "Allowable Expenses")
 
     return sections
+
+
+def _preflight_response(message: str, employee_id: str | None) -> dict[str, Any] | None:
+    """Handle questions that must not depend on an LLM decision.
+
+    Clarifying an underspecified request and rejecting a plainly non-HR one
+    are safety and scope controls, not reasoning tasks.  Keeping them before
+    both planner paths ensures an API-key deployment behaves no less safely
+    than the credential-free deterministic fallback.
+    """
+    normalized = message.lower()
+
+    if any(phrase in normalized for phrase in OBVIOUSLY_OUT_OF_SCOPE):
+        return {
+            "answer": (
+                "I can only help with this company's HR policies and synthetic employee records. "
+                "Please ask an HR policy or workplace-operations question."
+            ),
+            "citations": [],
+            "trace": [],
+            "out_of_corpus": True,
+            "planner": "scope-gate",
+        }
+
+    if not employee_id and normalized.strip().startswith("am i eligible"):
+        return {
+            "answer": (
+                "Please tell me which benefit or programme you mean and provide a synthetic employee ID "
+                "(for example E1001). I will not assume a topic or guess eligibility."
+            ),
+            "citations": [],
+            "trace": [],
+            "needs_clarification": True,
+            "planner": "clarification-gate",
+        }
+
+    pto_policy_question = any(term in normalized for term in (
+        "notice", "approval", "request", "policy", "accrual",
+    ))
+    if not employee_id and (
+        any(word in normalized for word in PERSONAL)
+        or (
+            ("how much pto" in normalized or "how many pto" in normalized)
+            and not pto_policy_question
+        )
+    ):
+        return {
+            "answer": (
+                "Please provide a synthetic employee ID (for example E1001) so I can check the "
+                "mock record. I will not guess identity or eligibility."
+            ),
+            "citations": [],
+            "trace": [],
+            "needs_clarification": True,
+            "planner": "clarification-gate",
+        }
+
+    if ("reimbursed" in normalized or "reimbursement" in normalized) and "this" in normalized:
+        return {
+            "answer": (
+                "Please say what expense or category you want reimbursed and its approximate cost. "
+                "I need those details to check the relevant policy."
+            ),
+            "citations": [],
+            "trace": [],
+            "needs_clarification": True,
+            "planner": "clarification-gate",
+        }
+
+    return None
+
+
+def _asks_about_foreign_law(message: str) -> bool:
+    """True when the question asks what another country's law provides.
+
+    Both halves are required. A country name alone is in scope — the remote-work
+    policy covers working from another country — and an entitlement word alone is
+    an ordinary policy question about US employees.
+    """
+    normalized = message.lower()
+    return any(term in normalized for term in NON_US_JURISDICTIONS) and any(
+        term in normalized for term in FOREIGN_LAW_TERMS
+    )
+
+
+def _named_jurisdiction(message: str) -> str:
+    """Name the country back to the user rather than saying "that country"."""
+    normalized = message.lower()
+    for term in NON_US_JURISDICTIONS:
+        if term in normalized and term.strip() not in {
+            "eu", "abroad", "overseas", "outside the us", "outside the united states",
+        }:
+            return term.strip().title()
+    return "that country"
+
+
+async def _unsupported_jurisdiction_response(message: str) -> dict[str, Any]:
+    """Refuse non-US entitlements with visible MCP evidence.
+
+    We still retrieve the relevant policy so the browser trace demonstrates
+    that the refusal is grounded in the project corpus rather than a model
+    assumption.  The response does not extrapolate a US entitlement to a
+    foreign jurisdiction.
+    """
+    trace: list[dict[str, Any]] = []
+    arguments = {"query": f"{message} United States policy scope", "limit": settings.TOP_K}
+    policy = await call("search_policy_documents", arguments)
+    trace.append(_trace_entry("search_policy_documents", arguments, policy))
+    return {
+        "answer": (
+            f"I cannot state a {_named_jurisdiction(message)}-specific entitlement. "
+            "This synthetic policy corpus covers "
+            "United States employees only, so please contact People Operations for the applicable "
+            "local policy or legal guidance."
+        ),
+        "citations": _cite(policy) if isinstance(policy, list) else [],
+        "trace": trace,
+        "out_of_corpus": True,
+        "planner": "jurisdiction-gate",
+    }
+
+
+def _is_device_security_incident(message: str) -> bool:
+    """Identify a lost/stolen company-device report that needs a prompt safe response."""
+    normalized = message.lower()
+    return "laptop" in normalized and any(term in normalized for term in ("stolen", "theft", "lost", "taken"))
 
 
 def _evidence_excerpt(results: list[dict[str, Any]]) -> str:
@@ -262,45 +417,9 @@ async def _deterministic_respond(
 
     normalized = message.lower()
 
-    if any(phrase in normalized for phrase in OBVIOUSLY_OUT_OF_SCOPE):
-        return {
-            "answer": (
-                "I can only help with this company's HR policies and synthetic employee records. "
-                "Please ask an HR policy or workplace-operations question."
-            ),
-            "citations": [], "trace": trace, "out_of_corpus": True, "planner": "deterministic",
-        }
-
-    if not employee_id and normalized.strip().startswith("am i eligible"):
-        return {
-            "answer": (
-                "Please tell me which benefit or programme you mean and provide a synthetic employee ID "
-                "(for example E1001). I will not assume a topic or guess eligibility."
-            ),
-            "citations": [], "trace": trace, "needs_clarification": True, "planner": "deterministic",
-        }
-
-    if not employee_id and (
-        any(word in normalized for word in PERSONAL)
-        or "how much pto" in normalized
-        or "how many pto" in normalized
-    ):
-        return {
-            "answer": (
-                "Please provide a synthetic employee ID (for example E1001) so I can check the "
-                "mock record. I will not guess identity or eligibility."
-            ),
-            "citations": [], "trace": trace, "needs_clarification": True, "planner": "deterministic",
-        }
-
-    if ("reimbursed" in normalized or "reimbursement" in normalized) and "this" in normalized:
-        return {
-            "answer": (
-                "Please say what expense or category you want reimbursed and its approximate cost. "
-                "I need those details to check the relevant policy."
-            ),
-            "citations": [], "trace": trace, "needs_clarification": True, "planner": "deterministic",
-        }
+    preflight = _preflight_response(message, employee_id)
+    if preflight is not None:
+        return preflight
 
     # Pure synthetic-record questions do not need a policy retrieval. Keeping
     # these narrow avoids implying a policy source for a fact that came only
@@ -463,9 +582,26 @@ async def respond(
     confirm_action: bool = False,
 ) -> dict[str, Any]:
     """Entry point used by the web layer."""
-    async with request_session():
-        if any(word in message.lower() for word in SENSITIVE):
+    if any(word in message.lower() for word in SENSITIVE):
+        async with request_session():
             return await _escalate(message, employee_id, confirm_action)
+
+    preflight = _preflight_response(message, employee_id)
+    if preflight is not None:
+        return preflight
+
+    async with request_session():
+        if _asks_about_foreign_law(message):
+            return await _unsupported_jurisdiction_response(message)
+
+        # A lost or stolen device is time-sensitive. Route it through the
+        # deterministic MCP-backed safety path so a model cannot omit the
+        # immediate Security-reporting and evidence-preservation guidance.
+        if _is_device_security_incident(message):
+            incident = await _deterministic_respond(message, employee_id, confirm_action)
+            incident["planner"] = "security-incident-gate"
+            incident["answer_basis"] = "MCP policy retrieval + deterministic security-incident guard"
+            return incident
 
         if settings.llm_enabled():
             try:

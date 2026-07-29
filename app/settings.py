@@ -31,6 +31,10 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 # Completions tool behavior you test.
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-5.6-luna")
 MAX_TOOL_ITERATIONS = int(os.getenv("MAX_TOOL_ITERATIONS", "6"))
+# A model can place more than one tool call in a single completion. Bound the
+# total dispatches as well as the number of planner turns so a single response
+# cannot bypass the turn limit and drive unbounded cost or MCP work.
+MAX_TOOL_CALLS = int(os.getenv("MAX_TOOL_CALLS", "12"))
 # Bound external/provider and local-tool waits so one stalled dependency cannot
 # hold an HTTP request forever on a small free-tier service.
 LLM_TIMEOUT_SECONDS = float(os.getenv("LLM_TIMEOUT_SECONDS", "35"))
