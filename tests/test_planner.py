@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 
 import pytest
 
-from app import planner
+from app import planner, settings
 
 
 @dataclass
@@ -110,6 +110,11 @@ def test_tool_schemas_convert_to_chat_completions_shape():
 
 
 def test_planner_dispatches_tool_call_and_records_trace(monkeypatch):
+    # Pin the model rather than reading the ambient default. OPENAI_MODEL is a
+    # host variable, and the deployment build runs this suite with the service's
+    # own environment injected, so asserting the committed default here would
+    # fail the build whenever the host deliberately overrides the model.
+    monkeypatch.setattr(settings, "OPENAI_MODEL", "gpt-5.6-luna")
     stub = _install(monkeypatch, [
         _calls(_tool_call("search_policy_documents", {"query": "PTO notice", "limit": 2})),
         _text("You need five calendar days' notice."),

@@ -120,3 +120,14 @@ def test_demo_page_marks_data_as_synthetic_and_sends_confirmation():
     assert 'id="confirm-mock-action"' in page
     assert "confirm_mock_action: confirmationInput.checked" in page
     assert "confirmationInput.checked = false" in page
+
+
+def test_demo_page_includes_an_accurate_workflow_map():
+    page = (Path(main.__file__).parent / "static" / "index.html").read_text()
+
+    assert 'id="workflow-map"' in page
+    assert "Agent orchestrator" in page
+    assert "OpenAI LLM planner" in page
+    assert "MCP client → FastMCP server" in page
+    assert "Structured results return to the LLM" in page
+    assert "final answer, citations, and exact MCP tool trace" in page

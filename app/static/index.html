@@ -252,6 +252,110 @@
     .synthetic-chip { padding: 9px 12px; border: 1px solid #efd9a6; color: #8a5400; background: #fffaf0; }
     .synthetic-chip::before { content: "◈"; color: #c27400; font-size: .92rem; }
 
+    #workflow-map { scroll-margin-top: 20px; }
+
+    .workflow-map {
+      max-width: 1240px;
+      margin: 0 auto 24px;
+      overflow: hidden;
+    }
+
+    .workflow-map-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 20px;
+      padding: 24px 28px 19px;
+      border-bottom: 1px solid #e6edf4;
+      background: linear-gradient(105deg, #fbfdff, #f5f9fe);
+    }
+
+    .workflow-map-header .eyebrow { margin-bottom: 8px; }
+    .workflow-map-header h2 { margin-bottom: 6px; color: var(--ink); font-size: 1.08rem; letter-spacing: -.018em; }
+    .workflow-map-header p:last-child { max-width: 690px; margin: 0; color: var(--muted); font-size: .84rem; line-height: 1.55; }
+
+    .workflow-map-badge {
+      display: inline-flex;
+      flex: 0 0 auto;
+      align-items: center;
+      gap: 7px;
+      padding: 7px 10px;
+      border: 1px solid #cfe2f5;
+      border-radius: 999px;
+      color: #256197;
+      background: #f4f9ff;
+      font-size: .72rem;
+      font-weight: 760;
+      white-space: nowrap;
+    }
+
+    .workflow-map-badge::before { width: 7px; height: 7px; content: ""; border-radius: 50%; background: var(--blue); box-shadow: 0 0 0 3px rgba(20, 108, 206, .12); }
+
+    .workflow-map-body { padding: 22px 28px 24px; }
+
+    .workflow-map-flow {
+      display: flex;
+      align-items: stretch;
+      gap: 32px;
+      padding: 0;
+      margin: 0;
+      list-style: none;
+    }
+
+    .workflow-map-node {
+      position: relative;
+      display: flex;
+      flex: 1 1 125px;
+      flex-direction: column;
+      min-width: 0;
+      min-height: 142px;
+      padding: 15px;
+      border: 1px solid #d8e5f0;
+      border-radius: 11px;
+      background: #fbfdff;
+    }
+
+    .workflow-map-node:not(:last-child)::after {
+      position: absolute;
+      top: 50%;
+      right: -26px;
+      z-index: 1;
+      color: #4b89c2;
+      content: "→";
+      font-size: 1.35rem;
+      font-weight: 700;
+      line-height: 1;
+      transform: translateY(-50%);
+    }
+
+    .workflow-map-node[data-stage="orchestrator"] { border-color: #bcd8f2; background: #f5faff; }
+    .workflow-map-node[data-stage="llm"] { border-color: #bfe6db; background: #f4fcfa; }
+    .workflow-map-node[data-stage="mcp"] { border-color: #cddff0; background: #f7fbff; }
+    .workflow-map-node[data-stage="result"] { border-color: #d5e7df; background: #f8fcfa; }
+
+    .workflow-map-step { margin-bottom: 9px; color: #5e809e; font-size: .66rem; font-weight: 800; letter-spacing: .085em; text-transform: uppercase; }
+    .workflow-map-node strong { display: block; margin-bottom: 6px; color: #27455f; font-size: .82rem; line-height: 1.25; }
+    .workflow-map-node span:last-child { color: var(--muted); font-size: .73rem; line-height: 1.45; }
+
+    .workflow-map-note {
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: 10px;
+      align-items: start;
+      padding: 13px 15px;
+      margin-top: 18px;
+      border: 1px solid #d8e8e3;
+      border-radius: 9px;
+      color: #416274;
+      background: #f4fbf9;
+      font-size: .77rem;
+      line-height: 1.5;
+    }
+
+    .workflow-map-note::before { display: grid; width: 22px; height: 22px; place-items: center; content: "↺"; border-radius: 50%; color: #087360; background: #dff5ee; font-size: 1rem; font-weight: 800; }
+    .workflow-map-note strong { color: #176c5b; }
+    .workflow-map-note p { margin: 2px 0 0; }
+
     .workspace-grid {
       display: grid;
       grid-template-columns: minmax(0, 1fr) 300px;
@@ -488,6 +592,19 @@
     .help-card p { margin-bottom: 0; }
     .help-card strong { color: #167561; }
 
+    .workflow-map-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      margin-top: 3px;
+      color: #216ba9;
+      font-size: .77rem;
+      font-weight: 760;
+      text-decoration: none;
+    }
+
+    .workflow-map-link:hover { color: var(--blue-dark); text-decoration: underline; }
+
     #result-panel {
       max-width: 1240px;
       padding-top: 24px;
@@ -563,6 +680,12 @@
       .result-layout { grid-template-columns: minmax(0, 1fr) 285px; }
     }
 
+    @media (max-width: 1200px) {
+      .workflow-map-flow { display: grid; grid-template-columns: 1fr; gap: 25px; }
+      .workflow-map-node { min-height: auto; }
+      .workflow-map-node:not(:last-child)::after { top: auto; right: 50%; bottom: -25px; transform: translateX(50%) rotate(90deg); }
+    }
+
     @media (max-width: 820px) {
       .app-shell { display: block; }
       .sidebar { position: static; min-height: auto; padding: 16px 20px; }
@@ -593,6 +716,11 @@
       .result-header { align-items: flex-start; flex-direction: column; }
       .result-section { padding: 18px; }
       .trace-list { grid-template-columns: 1fr; }
+      .workflow-map { margin-bottom: 20px; }
+      .workflow-map-header { display: block; padding: 20px 18px 16px; }
+      .workflow-map-badge { margin-top: 12px; }
+      .workflow-map-body { padding: 17px 18px 19px; }
+      .workflow-map-note { margin-top: 16px; }
     }
 
     @media (prefers-reduced-motion: reduce) {
@@ -614,6 +742,7 @@
       <p class="workspace-label">Demo workspace</p>
       <nav class="sidebar-nav" aria-label="Page sections">
         <a href="#ask" aria-current="page"><span class="nav-icon" aria-hidden="true">↗</span>Ask ClearHR</a>
+        <a href="#workflow-map"><span class="nav-icon" aria-hidden="true">⇄</span>Workflow map</a>
         <a href="#evidence"><span class="nav-icon" aria-hidden="true">≡</span>Evidence trace</a>
         <a href="#demo-records"><span class="nav-icon" aria-hidden="true">◇</span>Demo records</a>
       </nav>
@@ -640,6 +769,59 @@
           <p class="page-summary">Ask a policy question, review the retrieved evidence, and see the exact MCP tools used to prepare each answer.</p>
         </div>
         <span class="synthetic-chip">Synthetic data only</span>
+      </section>
+
+      <section class="workflow-map card" id="workflow-map" aria-labelledby="workflow-map-title">
+        <header class="workflow-map-header">
+          <div>
+            <p class="eyebrow">Architecture walkthrough</p>
+            <h2 id="workflow-map-title">How one request moves through ClearHR</h2>
+            <p>Use this map while presenting: it shows where the agent makes decisions, where MCP tools run, and how returned evidence becomes a cited answer.</p>
+          </div>
+          <span class="workflow-map-badge">Normal LLM-enabled path</span>
+        </header>
+
+        <div class="workflow-map-body">
+          <ol class="workflow-map-flow" aria-label="Normal LLM-enabled ClearHR request flow">
+            <li class="workflow-map-node" data-stage="request">
+              <span class="workflow-map-step">01 · Request</span>
+              <strong>Browser sends a question</strong>
+              <span><code>POST /chat</code> carries the synthetic question, employee ID, and mock-action confirmation.</span>
+            </li>
+            <li class="workflow-map-node" data-stage="orchestrator">
+              <span class="workflow-map-step">02 · Guardrails</span>
+              <strong>Agent orchestrator</strong>
+              <span>Applies identity and safety checks, then selects the LLM or the deterministic fallback.</span>
+            </li>
+            <li class="workflow-map-node" data-stage="llm">
+              <span class="workflow-map-step">03 · Plan</span>
+              <strong>OpenAI LLM planner</strong>
+              <span>Receives discovered MCP tool schemas and decides which evidence is needed next.</span>
+            </li>
+            <li class="workflow-map-node" data-stage="mcp">
+              <span class="workflow-map-step">04 · Retrieve</span>
+              <strong>MCP client → FastMCP server</strong>
+              <span>Calls typed tools over stdio / JSON-RPC to retrieve RAG policy evidence or mock records.</span>
+            </li>
+            <li class="workflow-map-node" data-stage="llm">
+              <span class="workflow-map-step">05 · Use results</span>
+              <strong>Structured results return to the LLM</strong>
+              <span>The planner can use the evidence or request another bounded MCP tool call.</span>
+            </li>
+            <li class="workflow-map-node" data-stage="result">
+              <span class="workflow-map-step">06 · Explain</span>
+              <strong>Reviewable answer in the browser</strong>
+              <span>ClearHR returns the final answer, citations, and exact MCP tool trace for review.</span>
+            </li>
+          </ol>
+
+          <aside class="workflow-map-note" aria-label="Workflow safety note">
+            <div>
+              <strong>Safe alternate paths.</strong>
+              <p>Sensitive workplace-conduct reports enter the deterministic safety gate before any LLM call. If the provider is unavailable, the deterministic planner uses the same MCP tool boundary and still returns visible evidence.</p>
+            </div>
+          </aside>
+        </div>
       </section>
 
       <div class="workspace-grid">
@@ -709,6 +891,7 @@
               <li><span class="workflow-number">02</span><span><strong>Retrieve evidence</strong><span>The agent calls the right MCP tools and records the outputs.</span></span></li>
               <li><span class="workflow-number">03</span><span><strong>Review the answer</strong><span>Inspect citations and the trace before relying on it.</span></span></li>
             </ol>
+            <a class="workflow-map-link" href="#workflow-map">Open the full workflow map <span aria-hidden="true">→</span></a>
           </section>
 
           <section class="support-card card" id="demo-records" aria-labelledby="records-title">
