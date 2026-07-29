@@ -29,7 +29,7 @@ import statistics
 import subprocess
 import time
 import unicodedata
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -519,7 +519,7 @@ LATENCY_METRICS = (("Latency p50", "latency_p50_ms"), ("Latency p95", "latency_p
 
 def _utc_timestamp() -> str:
     """Return a stable, explicit UTC timestamp for evaluation provenance."""
-    return datetime.now(UTC).isoformat().replace("+00:00", "Z")
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
 def _evaluator_git_sha() -> str:
