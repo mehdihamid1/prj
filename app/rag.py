@@ -511,4 +511,32 @@ def search(query: str, limit: int = 4, *, backend: str | None = None) -> list[di
         ordered = sorted(matches, key=lambda result: (-result["score"], -result["support"], result["id"]))
     else:
         ordered = sorted(matches, key=lambda result: (-result["support"], -result["score"], result["id"]))
-    return ordered[:limit]
+
+    # One strong chunk from each distinct document before a second chunk from
+    # any of them. A long policy otherwise takes every slot: the question
+    # "working from Portugal — what approvals and security requirements apply?"
+    # returned four remote-work chunks, two of them the same section, and the
+    # data-security policy that answers the second half of the question was
+    # never retrieved at all. The planner can still read more of a chosen
+    # document with get_policy_section.
+    selected: list[dict[str, Any]] = []
+    selected_ids: set[str] = set()
+    seen_documents: set[str] = set()
+    for result in ordered:
+        if result["document"] in seen_documents:
+            continue
+        selected.append(result)
+        selected_ids.add(result["id"])
+        seen_documents.add(result["document"])
+        if len(selected) == limit:
+            return selected
+
+    # A corpus smaller than the requested limit keeps ordinary top-k behaviour
+    # rather than returning fewer results than asked for.
+    for result in ordered:
+        if result["id"] in selected_ids:
+            continue
+        selected.append(result)
+        if len(selected) == limit:
+            break
+    return selected
