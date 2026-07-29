@@ -12,5 +12,7 @@ __pycache__/
 *.pfx
 *.log
 data/index.json
+data/index.dense.json
+data/fastembed-cache/
 .agents/
 .codex/

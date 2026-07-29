@@ -28,7 +28,7 @@ flowchart TB
     client -->|"MCP tool call"| mcp
     policyTool --> rag
     dataTool --> records
-    corpus -. "indexed at startup" .-> rag
+    corpus -. "indexed during build; validated in MCP child" .-> rag
     mcp -->|"structured tool results"| client
     client --> agent
     agent -->|"answer + citations + operational trace"| web
@@ -64,7 +64,7 @@ In simple terms: the employee asks a question, the agent chooses the evidence or
 
 ## Technology stack
 
-The same system at the product level — which library or service implements each block, and what protocol runs between them. Blocks labelled `now:` / `next:` distinguish the current lexical index from a possible semantic successor.
+The same system at the product level — which library or service implements each block, and what protocol runs between them. The RAG block exposes a safe lexical rollback and an opt-in local dense-vector path with the same citation contract.
 
 ```mermaid
 flowchart TB
@@ -76,8 +76,8 @@ flowchart TB
         orch["Agent orchestrator<br/><code>app/agent.py</code> · <code>app/planner.py</code><br/>safety gate → LLM tool loop<br/>→ deterministic fallback"]
         mcpc["MCP client<br/><code>app/mcp_client.py</code><br/>mcp SDK ≥1.12"]
         mcps["MCP server — FastMCP<br/><code>app/mcp_server.py</code><br/>@mcp.tool() · schemas from type hints"]
-        rag["RAG<br/><code>app/rag.py</code><br/>now: sparse IDF + document metadata<br/>next: sentence-transformers MiniLM-L6-v2"]
-        idx[("Index<br/>now: data/index.json<br/>next: Chroma")]
+        rag["RAG<br/><code>app/rag.py</code><br/>lexical rollback or FastEmbed BGE dense"]
+        idx[("Versioned local indexes<br/>index.json · index.dense.json")]
         data["Records<br/><code>app/data.py</code><br/>json.load()"]
         files[("mock_data/<br/>employees · pto_balances · benefits")]
         corpus[("data/policies/<br/>11 .md · 2 .html · 1 .txt")]
@@ -94,7 +94,7 @@ flowchart TB
     mcps -->|"Python call"| data
     rag --> idx
     data --> files
-    corpus -. "chunked at startup" .-> rag
+    corpus -. "chunked/indexed during build" .-> rag
 
     subgraph build["Build path"]
         direction LR
@@ -133,9 +133,9 @@ RENDER / RAILWAY — one free-tier web service
   │     │ Python call
   │     ▼
   ├─ RAG — app/rag.py
-  │     now:  sha256 feature hash + document/section metadata + cosine → data/index.json
-  │     next: sentence-transformers MiniLM-L6-v2 → Chroma
-  │     ◄── data/policies/*.{md,html,txt}, chunked at startup
+  │     lexical: sha256 feature hash + document/section metadata + cosine → data/index.json
+  │     dense: FastEmbed BGE-small 384-dim + cosine → data/index.dense.json
+  │     ◄── data/policies/*.{md,html,txt}, indexed during host build
   │
   └─ DATA — app/data.py, json.load()
         employees.json · pto_balances.json · benefits.json
@@ -159,7 +159,7 @@ BUILD PATH
 | Orchestrator | MCP client | Python call | `mcp_client.call(name, args)` |
 | MCP client | MCP server | **MCP stdio / JSON-RPC** | `mcp` SDK launches `python -m app.mcp_server` locally |
 | MCP tools | RAG / records | Python call | `rag.search()`, `data.employee()` |
-| RAG | Index | File I/O | `data/index.json` today, Chroma next |
+| RAG | Index | File I/O | Versioned local lexical or dense-vector JSON index |
 | GitHub | Actions | Webhook | `.github/workflows/ci.yml` |
 | GitHub | Render / Railway | Build webhook | `buildCommand` runs `pytest`; a failing build never starts the service |
 
@@ -177,13 +177,13 @@ Two properties are worth stating explicitly because the diagram makes them visib
 | LLM provider | OpenAI API (`OPENAI_MODEL`, default `gpt-5.6-luna`) | Claude API; Groq and OpenRouter free tiers; Ollama for local development only |
 | Orchestration | Manual tool-use loop | SDK tool runner — capable, but a beta dependency, and the explicit loop is what this project has to explain; LangGraph / CrewAI hide the orchestration entirely |
 | MCP server | FastMCP, local stdio subprocess in one deployed service | Separate HTTP service — rubric-preferred, but costs a second free-tier service |
-| Retrieval representation | Sparse IDF-weighted hashed vectors with document/section metadata | sentence-transformers MiniLM-L6-v2 (better semantics, ~90 MB download); fastembed; hosted free-tier embedding APIs |
-| Vector store | Single JSON index, rebuilt at startup | Chroma; FAISS; sqlite-vec; LanceDB; pgvector |
+| Retrieval representation | FastEmbed `BAAI/bge-small-en-v1.5` dense vectors when opted in; sparse IDF/hash rollback otherwise | hosted embedding APIs (adds key/cost/data transfer); sentence-transformers (larger runtime) |
+| Vector store | Versioned local JSON vector indexes, brute-force cosine over 142 chunks | Chroma; FAISS; sqlite-vec; LanceDB; pgvector — unnecessary operational weight at this corpus size |
 | Hosting | Render | Railway (better cold starts); Fly.io (scale-to-zero, needs a Dockerfile) |
 | CI | GitHub Actions | Required by the project brief |
 | Evaluation | pytest + a scoring harness | RAGAS and DeepEval — richer metrics, but add an LLM judge and dependency weight |
 
-The current representation is lexical rather than a pretrained semantic embedding model. The provider now in use does expose an embeddings endpoint (`/v1/embeddings`), so a semantic block could call it directly or use a local model; either way it remains unimplemented, and that rubric risk is tracked in `OPEN_ITEMS.md` rather than presented as complete.
+The dense path is a real pretrained semantic embedding implementation, not a provider API call: FastEmbed runs BGE-small locally and persists the resulting vectors with citation metadata. It is deliberately not the default on a 512 MB free host until the full web-process-plus-MCP-child memory and cold-start trial is recorded. The lexical backend remains a tested one-variable rollback, so the project does not claim a production host result before measuring it.
 
 ## Corpus and ingestion
 
@@ -203,16 +203,21 @@ Chunking is a fixed 220-word window with a 190-word stride, applied within each 
 
 | Decision | Choice | Rationale |
 | --- | --- | --- |
-| Retrieval representation | IDF-weighted hashed bag of words, 2^18 buckets, stored sparsely | No model download, no API key, deterministic. Sparse storage makes a large hashing space free |
+| Dense retrieval representation | FastEmbed `BAAI/bge-small-en-v1.5`, 384-dimensional L2-normalised vectors | Pretrained semantic retrieval with no provider key or data egress; BGE's retrieval instruction is applied to queries only |
+| Dense vector store | `data/index.dense.json`, separate from the lexical index; in-process brute-force cosine | 142 chunks × 384 float32 values are only about 213 KiB raw. A server/database would add failure modes without meaningful query-time benefit |
+| Lexical rollback representation | IDF-weighted hashed bag of words, 2^18 buckets, stored sparsely | Deterministic, dependency-light local/CI default and a one-variable rollback if a free host cannot sustain dense RSS/cold start |
 | Metadata weighting | Document filename/title and section-heading tokens counted 3× | Policy names such as *Benefits* or *Data Security* are retrieval evidence, not decorative labels |
-| Similarity | Cosine over L2-normalised sparse vectors | |
-| Store | Single JSON file, rebuilt at startup | No database dependency on a free tier |
+| Similarity | Dense cosine in semantic mode; sparse cosine in lexical mode | Both preserve the same chunk identifiers, document/section metadata, score, support, and MCP schema |
+| Scope guard | Lexical distinctive-token support retained even in dense mode | Dense similarity ranks semantic paraphrases; lexical support remains the conservative evidence signal for out-of-corpus refusal |
+| Lifecycle | Host build creates the selected index; MCP child validates/warms it before the stdio handshake | Prevents the FastAPI parent from loading a duplicate ONNX model and makes `/health` reflect MCP/RAG readiness |
 | Retrieval | `TOP_K = 4`, clamped to 1–8 at the tool boundary | The ablation variable |
 | Citations | Trace preserves every retrieved result; final citations select up to four directly named/supporting chunk `id`/`document`/`section`/snippet records | Demonstrates all MCP outputs while avoiding the misleading implication that every broad-search hit supports the answer |
 
 **Why the representation changed.** The first draft used 256 dense dimensions with unweighted term frequencies. That was adequate for a two-page corpus and collapsed at 15,969 words: hash collisions saturated the vectors and corpus-wide words such as *employee* and *policy* dominated every comparison, so top-1 document accuracy on a 13-question probe was 3/13. Adding IDF weighting, raising the hashing space, and weighting headings moved that to 10/13 top-1 and 13/13 top-3 while shrinking the index to 378 KB. The current revision also indexes document metadata so a policy name such as *Benefits* or *Data Security* contributes to retrieval; its deployment evaluation remains pending.
 
-**Known limitation.** This is lexical retrieval. A question phrased entirely in synonyms of the policy wording will still retrieve poorly, and no amount of weighting fixes that. `rag.embed` is the single swap point for a sentence-transformer encoder; the persisted format and the MCP tool contract would not change.
+**Measured dense comparison.** On the fixed 20 retrieval-labelled evaluation cases (28 expected document labels), dense retrieval at the default k=4 achieved 23/28 expected-document recall (82%), 16/20 complete required-document coverage (80%), 53% document precision, and .875 MRR. Lexical achieved 18/28 (64%), 12/20 (60%), 30%, and .775 respectively. The complete local table, commands, and resource observation are in [evaluation/dense_rag_comparison.md](evaluation/dense_rag_comparison.md). These are retriever-only local measurements—not a claim that the live LLM answer quality improved.
+
+**Known limitation.** A dense JSON vector index is intentionally lightweight rather than a named service such as Chroma or FAISS; for 142 chunks, brute-force cosine is materially simpler and faster than an extra vector-database process. The rubric may nevertheless prefer a named conventional vector store, so this trade-off is documented rather than hidden. Dense runtime RSS must also be measured on the submitted host before enabling it there; `RAG_BACKEND=lexical` remains the immediate rollback path.
 
 ## MCP tools and schemas
 
@@ -260,13 +265,13 @@ Every response carries `planner`, a `trace` of `{tool, arguments, result_preview
 | Tool failure containment | Tool exceptions become generic error results the model can react to; an unhandled error under `/chat` becomes a safe 503 retry message |
 | Fact vs. advice | Answers state that content is policy guidance, not legal, tax, or medical advice |
 
-**On the refusal threshold.** Cosine score alone cannot separate in-corpus from out-of-corpus questions here — measured on a 21-question probe, *"What is the capital of France?"* scored 0.175, above three genuine policy questions. The discriminating signal is how many of the question's *distinctive* words (those the corpus treats as rare) actually appear in the retrieved chunk. On that measure in-corpus questions scored ≥0.50 and out-of-corpus ≤0.50 — separated, but touching. The threshold is therefore deliberately a coarse first filter set at 0.34, with the model making the final call. A single number was not sufficient, and the design says so rather than implying a precision it does not have.
+**On the refusal threshold.** Cosine score alone cannot separate in-corpus from out-of-corpus questions here — measured on a 21-question probe, *"What is the capital of France?"* scored 0.175, above three genuine policy questions. The discriminating signal is how many of the question's *distinctive* words (those the corpus treats as rare) appear anywhere in the corpus. In lexical mode the top result naturally carries that maximum; in dense mode `query_support` carries it separately so a semantically relevant top chunk is not rejected merely because it paraphrases the question. The threshold is therefore deliberately a coarse first filter set at 0.34, with the model making the final call. A single number was not sufficient, and the design says so rather than implying a precision it does not have.
 
 ## Deployment and CI/CD
 
-The repository contains both `render.yaml` and `railway.toml`, so either host can run one Python web service with the same tested build command and the platform-provided `PORT`. Both configurations probe `/health`, which returns HTTP 503 when the local MCP child cannot be reached. Python is pinned to 3.11 with `.python-version` so a host-default change cannot shift underneath the application.
+The repository contains both `render.yaml` and `railway.toml`, so either host can run one Python web service with the same tested build command and the platform-provided `PORT`. The build runs `scripts/build_rag_index.py` for the selected `RAG_BACKEND`; dense mode therefore downloads/caches its model and builds vectors before the web process starts. Both configurations probe `/health`, which returns HTTP 503 when the local MCP child cannot be reached. Python is pinned to 3.11 with `.python-version` so a host-default change cannot shift underneath the application.
 
-**How "deploy only if tests pass" is actually enforced.** Both hosts run `pip install -r requirements.txt && python -m pytest -q` as their build command, so a failed host test fails the build and does not replace the running service. `render.yaml` additionally sets `autoDeployTrigger: checksPass`: Render waits for the linked branch's GitHub checks before beginning an automatic deploy. Railway's configuration has no separate Actions-triggered hook; its host build remains the deployment gate. GitHub Actions itself covers more ground than the host build: lint, import check, index build, the full test suite, the app-start smoke test, and the stdio MCP discovery-and-call check.
+**How "deploy only if tests pass" is actually enforced.** Both hosts install dependencies, build the selected RAG index, then run the test suite with `RAG_BACKEND=lexical`; a failed build does not replace the running service. This makes the host build deterministic while still proving a requested dense model can download and index before startup. `render.yaml` additionally sets `autoDeployTrigger: checksPass`: Render waits for the linked branch's GitHub checks before beginning an automatic deploy. Railway's configuration has no separate Actions-triggered hook; its host build remains the deployment gate. GitHub Actions itself covers more ground than the host build: lint, import check, lexical-index build, the full test suite, the app-start smoke test, and the stdio MCP discovery-and-call check.
 
 The distinction matters when reading the diagram: Render uses Actions status as a pre-deploy trigger and then runs the host build again; Railway runs the host build directly. In neither case does an Actions workflow execute an imperative deploy command.
 
@@ -278,13 +283,14 @@ The MCP stdio subprocess is the one component with a meaningful footprint, so it
 | --- | --- | --- |
 | Cold boot to healthy `/health` | 1.7 s | Railway `healthcheckTimeout = 60 s` |
 | Warm `/health` | ~3 ms | Probed on a schedule, so per-probe cost matters |
-| Resident memory | ~49 MB parent + ~51 MB MCP child ≈ 100 MB | Well inside a 512 MB container |
+| Lexical resident memory | ~49 MB parent + ~51 MB MCP child ≈ 100 MB | Well inside a 512 MB container |
+| Dense MCP process, local Python-3.11 `ensure_ready()` + query | 292,932 KB max RSS; model cache about 65 MB | Model is child-only, but total parent + child RSS and cold boot must be measured on the chosen 512 MB host before opt-in |
 | 20 concurrent tool calls | 23 ms, one child process | Memory is flat under concurrency |
 | Evaluation suite p50 / p95 | See the generated `evaluation/results.md` | A public Render HTTP run is recorded; re-run it after each deployed planner/safety revision |
 
 The figures depend on the server being started **once** rather than per request. The per-request design that preceded it measured ~590 ms and ~51 MB *per call*, which would have made every health probe fork an interpreter and put roughly 300 MB of children behind five concurrent requests — survivable on a laptop, an out-of-memory kill on a small container.
 
-Two further deployment details are pinned deliberately. The subprocess `cwd` is set to the repository root instead of inherited, because `python -m` resolves `app.mcp_server` from the working directory and a host that starts the process elsewhere would fail to launch the server. Dependencies are pinned and confirmed to have Python 3.11 wheels, matching `.python-version`, so the build does not fall back to compiling from source.
+Two further deployment details are pinned deliberately. The subprocess `cwd` is set to the repository root instead of inherited, because `python -m` resolves `app.mcp_server` from the working directory and a host that starts the process elsewhere would fail to launch the server. The dense model cache is also project-relative rather than under a host home directory, so the build and child use the same location. Dependencies are pinned and confirmed to have Python 3.11 wheels, matching `.python-version`, so the build does not fall back to compiling from source.
 
 ## Evaluation
 
@@ -340,7 +346,7 @@ Coverage by category: 8 single-policy, 6 workflow, 4 multi-document, 4 out-of-sc
 
 `python -m evaluation.run_eval` runs the set locally and writes measured results to `evaluation/results.md` plus synthetic per-case answer/citation/trace artifacts in `evaluation/artifacts.json`; `--ablation` adds the local retrieval sweep. `python -m evaluation.run_eval --base-url https://your-service.example` POSTs the same payloads to the deployed `/chat`, records HTTP status and client-observed latency, and deliberately labels remote citation-ID resolution `n/a`. Nothing in the harness estimates a score — every figure comes from a response produced during the run.
 
-**The ablation measures the retriever, not the pipeline.** Sweeping `TOP_K` end to end reported identical numbers at k=2, 4, and 6, because the agent's answer does not change whether the correct document arrives at rank 1 or rank 4 — the metric saturates and tests nothing. Measuring document recall and mean reciprocal rank on the retriever directly does show the effect: recall rises from 75% at k=1 to 80% at k=2 and is flat thereafter. That is the justification for `TOP_K = 4` — k=2 already captures nearly all recoverable documents, and 4 buys margin at no measured cost.
+**The ablation measures the retriever, not the pipeline.** Sweeping `TOP_K` end to end can report identical numbers at k=2, 4, and 6 because the agent's answer may not change whether the correct document arrives at rank 1 or rank 4. `retrieval_ablation()` therefore measures any-document recall, strict expected-document micro recall, complete required-document coverage, document precision (with repeated chunks deduplicated), and MRR directly. The local lexical-vs-dense comparison is reported in [evaluation/dense_rag_comparison.md](evaluation/dense_rag_comparison.md). Keep `TOP_K=4` for answer evidence margin, but re-run the ablation after every corpus, model, or chunking change rather than treating one result as permanent.
 
 Groundedness is reported as an **automatic proxy**: it checks every required document, citation shape, and (in local mode) that citation IDs resolve to the local index. It does not check that the wording is faithful to that chunk, which needs human review. The harness labels it as a proxy rather than presenting it as the real measurement.
 

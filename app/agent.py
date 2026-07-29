@@ -536,7 +536,12 @@ async def _deterministic_respond(
             "For theft, file a police report and give Security the reference; a replacement device is issued as a priority after the incident is logged."
         )
 
-    if not selected_policy or (not section_evidence and policy[0].get("support", 0.0) < settings.MIN_SUPPORT):
+    # Dense ranking can correctly return a semantic paraphrase whose own words
+    # do not overlap with the question.  The retriever therefore exposes the
+    # best lexical support *anywhere* in the corpus as ``query_support`` for
+    # this conservative scope check; older lexical responses retain ``support``.
+    query_support = policy[0].get("query_support", policy[0].get("support", 0.0))
+    if not selected_policy or (not section_evidence and query_support < settings.MIN_SUPPORT):
         return {
             "answer": (
                 "I don't have enough evidence in the internal policy corpus to answer that safely. "

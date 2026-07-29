@@ -37,7 +37,7 @@ safety gate and the confirmation-required mock ticket.
 | `design-and-evaluation.md` | [design-and-evaluation.md](design-and-evaluation.md) — see the per-topic breakdown below | **done** |
 | `ai-tooling.md` — which AI code tools were used and how, what worked well and what did not | [ai-tooling.md](ai-tooling.md) | **done** |
 | `deployed.md` — deployed URL, health endpoint URL, free-tier cold-start notes | [deployed.md](deployed.md) | **partial** — cold start not yet measured |
-| `evaluation/` — questions, expected answers or rubrics, scripts, reported results | [evaluation/evaluation_set.json](evaluation/evaluation_set.json), [run_eval.py](evaluation/run_eval.py), [results.md](evaluation/results.md), [artifacts.json](evaluation/artifacts.json) | **done** |
+| `evaluation/` — questions, expected answers or rubrics, scripts, reported results | [evaluation/evaluation_set.json](evaluation/evaluation_set.json), [run_eval.py](evaluation/run_eval.py), [results.md](evaluation/results.md), [artifacts.json](evaluation/artifacts.json), and [dense_rag_comparison.md](evaluation/dense_rag_comparison.md) | **done** |
 | `mock_data/` — synthetic employee, PTO, benefits and/or ticket data | [mock_data/](mock_data/) — `employees.json`, `pto_balances.json`, `benefits.json`. Tickets are drafted at request time and never persisted, so no ticket file exists; the brief requires this data only "if used" | **done** |
 | `mcp/` — MCP server code and tool definitions | [mcp/README.md](mcp/README.md) documents the layer and the six tool schemas. The executable server is [app/mcp_server.py](app/mcp_server.py); it is **not** placed under `mcp/` because that directory would shadow the installed `mcp` SDK package on import. The reason is recorded in `mcp/README.md` | **done** |
 
@@ -69,6 +69,5 @@ safety gate and the confirmation-required mock ticket.
 ## Outstanding
 
 Everything not marked **done** above, plus the technical gaps tracked in
-[OPEN_ITEMS.md](OPEN_ITEMS.md) — chiefly that retrieval is a lexical sparse
-hash/IDF index rather than an embedding model with a vector store, and that the
-current guardrail revision has not yet been deployed and re-evaluated.
+[OPEN_ITEMS.md](OPEN_ITEMS.md) — chiefly the dense-RAG host memory/cold-start
+trial, the post-deploy evaluation rerun, and the remaining submission actions.

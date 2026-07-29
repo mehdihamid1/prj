@@ -10,7 +10,29 @@ DATA_DIR = ROOT / "data"
 # Synthetic employee records live in mock_data/ at the repository root, the
 # location the project brief asks for.
 MOCK_DATA_DIR = ROOT / "mock_data"
+# The lexical index remains the safe rollback path.  Dense vectors use a
+# separate, versioned file so changing one backend never corrupts the other.
 INDEX_PATH = DATA_DIR / "index.json"
+DENSE_INDEX_PATH = DATA_DIR / "index.dense.json"
+RAG_INDEX_VERSION = 5
+
+# RAG backend.  ``lexical`` is deliberately the safe local/CI default: it has
+# no model download and keeps tests hermetic.  Render/Railway can opt in to the
+# measured dense path with ``RAG_BACKEND=dense`` and roll back with one variable.
+RAG_BACKEND = os.getenv("RAG_BACKEND", "lexical").strip().lower()
+RAG_MODEL = os.getenv("RAG_MODEL", "BAAI/bge-small-en-v1.5")
+# Use a project-relative cache rather than a host home directory.  A build can
+# prefetch the ONNX files here and the runtime MCP child can reuse them.
+_rag_cache_value = Path(os.getenv("RAG_MODEL_CACHE_DIR", "data/fastembed-cache"))
+RAG_MODEL_CACHE_DIR = _rag_cache_value if _rag_cache_value.is_absolute() else ROOT / _rag_cache_value
+RAG_QUERY_INSTRUCTION = "Represent this sentence for searching relevant passages: "
+
+
+def rag_backend() -> str:
+    """Return the configured retriever or fail clearly on a deployment typo."""
+    if RAG_BACKEND not in {"lexical", "dense"}:
+        raise ValueError("RAG_BACKEND must be either 'lexical' or 'dense'.")
+    return RAG_BACKEND
 
 # Retrieval
 TOP_K = int(os.getenv("TOP_K", "4"))

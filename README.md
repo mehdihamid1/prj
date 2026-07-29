@@ -46,7 +46,14 @@ If a non-empty key produces `planner: "deterministic-fallback"`, the provider ca
 
 ## Corpus
 
-14 synthetic policy documents, 15,969 words, in three formats — 11 Markdown, 2 HTML, 1 plain text — covering PTO, holidays, remote work, expenses, travel, equipment, benefits, leave, onboarding, data security, workplace conduct, compensation, performance, and health and safety. All three formats are parsed heading-aware so citations carry a real section name. Retrieval uses sparse IDF vectors plus document/section metadata. The trace preserves all returned evidence; the final citation list is deliberately limited to chunks that directly support the answer. The index is rebuilt deterministically at startup; there is no seed to set.
+14 synthetic policy documents, 15,969 words, in three formats — 11 Markdown, 2 HTML, 1 plain text — covering PTO, holidays, remote work, expenses, travel, equipment, benefits, leave, onboarding, data security, workplace conduct, compensation, performance, and health and safety. All three formats are parsed heading-aware so citations carry a real section name.
+
+Retrieval has two versioned, interchangeable local backends with the same chunk IDs and MCP output schema:
+
+- `RAG_BACKEND=lexical` — the deterministic sparse IDF/hash index, the safe local/CI default and rollback path.
+- `RAG_BACKEND=dense` — FastEmbed's local `BAAI/bge-small-en-v1.5` model creates 384-dimensional BGE vectors and stores them in `data/index.dense.json`; the small corpus is searched by in-process cosine rather than an unnecessary external database service.
+
+The host build creates the selected index. At runtime, only the persistent MCP subprocess loads the optional dense model, preventing a duplicate model copy in the FastAPI parent. The trace preserves all returned evidence; the final citation list is deliberately limited to chunks that directly support the answer. Dense mode is implemented but remains opt-in until the selected host's RSS and cold-start measurements are recorded.
 
 ## MCP tools
 
@@ -75,6 +82,7 @@ python -m pytest -q                 # RAG, MCP, planner-loop, API, and evaluatio
 ruff check app tests evaluation scripts
 python scripts/smoke_test.py        # boots the production command, checks /health
 python scripts/mcp_check.py         # stdio MCP discovery and live tool call
+RAG_BACKEND=dense python scripts/build_rag_index.py  # build/cache dense local vectors
 ```
 
 GitHub Actions runs all of the above on push and pull request.
@@ -86,7 +94,7 @@ Configured for either platform as a **single web service**, with no database and
 - **Render** — *New → Blueprint*, select this repository. [render.yaml](render.yaml) declares the runtime, build and start commands, free plan, and `/health` check.
 - **Railway** — create a project from the repository. [railway.toml](railway.toml) configures Railpack, the same build command, and the health check. Generate a public domain after the first successful deploy.
 
-Deployment is gated by the host build command, which runs `python -m pytest -q` — a failing test fails the build, and a failed build never replaces the running service. On Render, [render.yaml](render.yaml) additionally uses `autoDeployTrigger: checksPass`, so automatic deploys wait for GitHub checks; Railway uses the tested host build as its in-host gate. Set `OPENAI_API_KEY` in the host's environment-variable settings only; never commit it. Leave `OPENAI_MODEL` unset so the cost-sensitive `gpt-5.6-luna` default applies, or set it explicitly to the same value. The running app launches and calls its MCP server over stdio, even in the single-service deployment. `/health` returns HTTP 503 if that MCP connection is unavailable, so a broken tool service cannot appear healthy. Free-tier cold starts add latency because the service builds the policy index on first start.
+Deployment is gated by the host build command, which creates the configured RAG index and runs `python -m pytest -q` — a failing test fails the build, and a failed build never replaces the running service. On Render, [render.yaml](render.yaml) additionally uses `autoDeployTrigger: checksPass`, so automatic deploys wait for GitHub checks; Railway uses the tested host build as its in-host gate. Set `OPENAI_API_KEY` in the host's environment-variable settings only; never commit it. Leave `OPENAI_MODEL` unset so the cost-sensitive `gpt-5.6-luna` default applies, or set it explicitly to the same value. The running app launches and calls its MCP server over stdio, even in the single-service deployment. `/health` returns HTTP 503 if that MCP connection is unavailable, so a broken tool service cannot appear healthy. Use `RAG_BACKEND=lexical` by default. Set `RAG_BACKEND=dense` only for the documented measured trial: the build then downloads/caches the local model and the MCP child warms it before `/health` becomes ready.
 
 `/chat` also has a small process-local cost guard by default (30 requests per client and 60 total per 60 seconds). It is suitable for a one-instance coursework demo, not a replacement for authentication, an edge rate limiter, or a production privacy review.
 
@@ -117,7 +125,7 @@ python -m evaluation.run_eval --base-url https://your-service.example
 - [ ] Submit through the course dashboard. For a group, one member submits on behalf of
       the group and uploads the signed final page of the Group Project Agreement if asked
 
-The brief's requirements are tracked item by item, with the evidence for each, in [SUBMISSION_REQUIREMENTS.md](SUBMISSION_REQUIREMENTS.md). Known gaps, verified evidence, and deliberate trade-offs are tracked in [OPEN_ITEMS.md](OPEN_ITEMS.md), including the semantic-vector-store rubric risk, cold-start measurement, the post-deploy evaluation rerun, and the remaining submission actions.
+The brief's requirements are tracked item by item, with the evidence for each, in [SUBMISSION_REQUIREMENTS.md](SUBMISSION_REQUIREMENTS.md). Known gaps, verified evidence, and deliberate trade-offs are tracked in [OPEN_ITEMS.md](OPEN_ITEMS.md), including the dense-RAG host measurement, cold-start measurement, the post-deploy evaluation rerun, and the remaining submission actions.
 
 ## AI assistance
 

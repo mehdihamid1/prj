@@ -46,6 +46,24 @@ call. Measured locally: cold boot to a healthy `/health` is **1.7 s** against
 Railway's 60 s `healthcheckTimeout`; warm `/health` is **~3 ms**. What is still
 unmeasured in public is the host's wake-from-idle time and real LLM latency.
 
+## Blocking: measure the opt-in dense RAG backend on the chosen host
+
+The repository now implements `RAG_BACKEND=dense` with local FastEmbed
+`BAAI/bge-small-en-v1.5` vectors and a versioned `data/index.dense.json` store.
+The local retriever comparison in
+[`evaluation/dense_rag_comparison.md`](evaluation/dense_rag_comparison.md)
+improves default-k expected-document recall from 64% to 82% and complete
+required-document coverage from 60% to 80%. Those are **local retrieval**
+results only, not a deployed LLM-quality claim.
+
+Dense Python-3.11 `ensure_ready()` plus one query measured 292,932 KB maximum RSS locally,
+so do not silently turn it on for the 512 MB free service. Follow the dense
+trial in `DEPLOYMENT_GUIDE.md`: first record a lexical baseline, set the
+non-secret `RAG_BACKEND=dense`, verify the build cache and `/health`, measure
+total host RSS/cold boot/warm latency, and re-run both the local ablation and
+the 29-case public HTTP evaluation. Set `RAG_BACKEND=lexical` to roll back
+without code or data migration if the host limit is approached.
+
 ## Blocking: share the repository with the grader
 
 Share the exact `main` commit whose GitHub Actions checks are green with the
@@ -69,15 +87,15 @@ signed final page of the Group Project Agreement when the dashboard requests
 it. Do not upload credentials, host screenshots containing secrets, or
 non-synthetic employee information.
 
-## Should improve: replace the lexical index with a model-backed vector store
+## Should improve: conventional vector-store interpretation
 
-The current index is a deterministic sparse hash/IDF representation stored in
-JSON. It is reproducible and tested, but it is lexical—not a semantic embedding
-model or conventional vector database. The rubric explicitly names embedding
-models and stores such as Chroma/FAISS. For the strongest compliance story,
-replace this layer with a local small embedding model plus FAISS or Chroma, then
-repeat the retrieval ablation and deployment smoke test. Do this only after
-checking memory and cold-start cost on the chosen free host.
+The dense implementation is semantic and model-backed, but its vector store is
+a deliberately small persisted JSON matrix searched by cosine rather than a
+named FAISS/Chroma dependency. That is technically appropriate for 142 chunks,
+but the rubric names conventional stores as examples. If a grader interprets
+that wording strictly, evaluate a pinned `faiss-cpu` index only after the dense
+host trial passes; do not add it pre-emptively and make the 512 MB deployment
+less reliable merely for a label.
 
 ## Should improve: human-check groundedness
 
