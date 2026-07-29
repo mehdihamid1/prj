@@ -4,6 +4,8 @@ Usage:
     python -m evaluation.run_eval
     python -m evaluation.run_eval --ablation
     python -m evaluation.run_eval --base-url https://your-clearhr-service.example
+    python -m evaluation.run_eval --base-url https://your-clearhr-service.example --runs 3 \
+        --require-rag-backend dense --deployment-revision <sha>
     python -m evaluation.run_eval --out results.md
 
 Local mode exercises the installed agent and its deterministic fallback without
@@ -20,11 +22,14 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import hashlib
 import json
 import re
 import statistics
+import subprocess
 import time
 import unicodedata
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -230,8 +235,13 @@ def score_case(
         if index_ids is not None
         else None
     )
+    # An empty expected-document list means "no particular document is
+    # required," not "the answer must contain no evidence." For example, a
+    # safe foreign-jurisdiction refusal deliberately calls the policy search
+    # tool and may cite the returned US-only scope evidence. Keep structure and
+    # local-ID checks strict while allowing that grounded refusal to pass.
     citation_ok = (
-        document_coverage["complete"]
+        (not expected_documents or document_coverage["complete"])
         and citation_shape_ok
         and citations_resolve is not False
     )
@@ -365,33 +375,61 @@ async def run_once(cases: list[dict[str, Any]], base_url: str | None = None) -> 
     return await run_local_once(cases)
 
 
-def _rate(rows: list[dict[str, Any]], key: str) -> str:
+def _rate_details(rows: list[dict[str, Any]], key: str) -> dict[str, int | float | None]:
+    """Return raw count/fraction data suitable for repeated-run aggregation."""
     values = [row[key] for row in rows if row.get(key) is not None]
     if not values:
-        return "n/a"
+        return {"passed": None, "total": 0, "fraction": None}
     passed = sum(bool(value) for value in values)
-    return f"{passed}/{len(values)} ({passed / len(values):.0%})"
+    total = len(values)
+    return {"passed": passed, "total": total, "fraction": passed / total}
 
 
-def _micro_document_metric(rows: list[dict[str, Any]], metric: str) -> str:
+def _format_rate(details: dict[str, int | float | None]) -> str:
+    fraction = details["fraction"]
+    if fraction is None:
+        return "n/a"
+    return f"{details['passed']}/{details['total']} ({float(fraction):.0%})"
+
+
+def _rate(rows: list[dict[str, Any]], key: str) -> str:
+    """Render a raw rate for the existing single-run report format."""
+    return _format_rate(_rate_details(rows, key))
+
+
+def _micro_document_details(
+    rows: list[dict[str, Any]], metric: str
+) -> dict[str, int | float | None]:
     graded = [row for row in rows if row["citation_documents_expected"]]
     if not graded:
-        return "n/a"
+        return {"passed": None, "total": 0, "fraction": None}
     matched = sum(row["citation_documents_matched"] for row in graded)
     if metric == "recall":
         denominator = sum(row["citation_documents_expected"] for row in graded)
     else:
         denominator = sum(row["citation_documents_cited"] for row in graded)
-    return f"{matched}/{denominator} ({matched / denominator:.0%})" if denominator else "0/0 (n/a)"
+    return {
+        "passed": matched,
+        "total": denominator,
+        "fraction": matched / denominator if denominator else None,
+    }
+
+
+def _micro_document_metric(rows: list[dict[str, Any]], metric: str) -> str:
+    return _format_rate(_micro_document_details(rows, metric))
+
+
+def _micro_tool_recall_details(rows: list[dict[str, Any]]) -> dict[str, int | float | None]:
+    graded = [row for row in rows if row["expected_tools"]]
+    if not graded:
+        return {"passed": None, "total": 0, "fraction": None}
+    expected = sum(len(row["expected_tools"]) for row in graded)
+    matched = sum(round(row["tool_required_recall"] * len(row["expected_tools"])) for row in graded)
+    return {"passed": matched, "total": expected, "fraction": matched / expected}
 
 
 def _micro_tool_recall(rows: list[dict[str, Any]]) -> str:
-    graded = [row for row in rows if row["expected_tools"]]
-    if not graded:
-        return "n/a"
-    expected = sum(len(row["expected_tools"]) for row in graded)
-    matched = sum(round(row["tool_required_recall"] * len(row["expected_tools"])) for row in graded)
-    return f"{matched}/{expected} ({matched / expected:.0%})"
+    return _format_rate(_micro_tool_recall_details(rows))
 
 
 def summarise(rows: list[dict[str, Any]], base_url: str | None = None) -> dict[str, Any]:
@@ -402,30 +440,310 @@ def summarise(rows: list[dict[str, Any]], base_url: str | None = None) -> dict[s
     confirmed_actions = [row for row in rows if row["action_expected"]]
     planners = {row["planner"] for row in rows}
 
+    metric_details = {
+        "behaviour_accuracy": _rate_details(rows, "behaviour_ok"),
+        "answer_rubric_accuracy": _rate_details(rows, "answer_content_ok"),
+        "end_to_end_pass_rate": _rate_details(rows, "overall_ok"),
+        "citation_document_recall": _micro_document_details(rows, "recall"),
+        "citation_document_precision": _micro_document_details(rows, "precision"),
+        "citation_complete_coverage": _rate_details(citation_cases, "citation_coverage_ok"),
+        "multi_document_complete_coverage": _rate_details(
+            multi_document_cases, "citation_coverage_ok"
+        ),
+        "citation_shape": _rate_details(rows, "citation_shape_ok"),
+        "citations_resolve": _rate_details(rows, "citations_resolve"),
+        "tool_required_recall": _micro_tool_recall_details(rows),
+        "tool_required_coverage": _rate_details(rows, "tool_required_coverage_ok"),
+        "workflow_completion": _rate_details(workflows, "overall_ok"),
+        "action_confirmation_contract": _rate_details(rows, "action_ok"),
+        "confirmed_action_completion": _rate_details(confirmed_actions, "action_ok"),
+        "groundedness_proxy": _rate_details(rows, "grounded_proxy"),
+        "http_success": _rate_details(rows, "http_ok") if base_url else {
+            "passed": None, "total": 0, "fraction": None,
+        },
+    }
+
     return {
         "mode": "http" if base_url else "local",
         "base_url": base_url,
         "cases": len(rows),
         "planner": next(iter(planners)) if len(planners) == 1 else "mixed",
-        "behaviour_accuracy": _rate(rows, "behaviour_ok"),
-        "answer_rubric_accuracy": _rate(rows, "answer_content_ok"),
-        "end_to_end_pass_rate": _rate(rows, "overall_ok"),
-        "citation_document_recall": _micro_document_metric(rows, "recall"),
-        "citation_document_precision": _micro_document_metric(rows, "precision"),
-        "citation_complete_coverage": _rate(citation_cases, "citation_coverage_ok"),
-        "multi_document_complete_coverage": _rate(multi_document_cases, "citation_coverage_ok"),
-        "citation_shape": _rate(rows, "citation_shape_ok"),
-        "citations_resolve": _rate(rows, "citations_resolve"),
-        "tool_required_recall": _micro_tool_recall(rows),
-        "tool_required_coverage": _rate(rows, "tool_required_coverage_ok"),
-        "workflow_completion": _rate(workflows, "overall_ok"),
-        "action_confirmation_contract": _rate(rows, "action_ok"),
-        "confirmed_action_completion": _rate(confirmed_actions, "action_ok"),
-        "groundedness_proxy": _rate(rows, "grounded_proxy"),
-        "http_success": _rate(rows, "http_ok") if base_url else "n/a",
+        "behaviour_accuracy": _format_rate(metric_details["behaviour_accuracy"]),
+        "answer_rubric_accuracy": _format_rate(metric_details["answer_rubric_accuracy"]),
+        "end_to_end_pass_rate": _format_rate(metric_details["end_to_end_pass_rate"]),
+        "citation_document_recall": _format_rate(metric_details["citation_document_recall"]),
+        "citation_document_precision": _format_rate(metric_details["citation_document_precision"]),
+        "citation_complete_coverage": _format_rate(metric_details["citation_complete_coverage"]),
+        "multi_document_complete_coverage": _format_rate(
+            metric_details["multi_document_complete_coverage"]
+        ),
+        "citation_shape": _format_rate(metric_details["citation_shape"]),
+        "citations_resolve": _format_rate(metric_details["citations_resolve"]),
+        "tool_required_recall": _format_rate(metric_details["tool_required_recall"]),
+        "tool_required_coverage": _format_rate(metric_details["tool_required_coverage"]),
+        "workflow_completion": _format_rate(metric_details["workflow_completion"]),
+        "action_confirmation_contract": _format_rate(
+            metric_details["action_confirmation_contract"]
+        ),
+        "confirmed_action_completion": _format_rate(
+            metric_details["confirmed_action_completion"]
+        ),
+        "groundedness_proxy": _format_rate(metric_details["groundedness_proxy"]),
+        "http_success": _format_rate(metric_details["http_success"]),
         "latency_p50_ms": statistics.median(latencies) if latencies else 0,
         "latency_p95_ms": latencies[max(0, int(len(latencies) * 0.95) - 1)] if latencies else 0,
+        "metric_details": metric_details,
     }
+
+
+RATE_METRICS = (
+    ("Behaviour accuracy", "behaviour_accuracy"),
+    ("Answer rubric accuracy", "answer_rubric_accuracy"),
+    ("End-to-end pass rate", "end_to_end_pass_rate"),
+    ("Citation document recall", "citation_document_recall"),
+    ("Citation document precision", "citation_document_precision"),
+    ("Citation complete required coverage", "citation_complete_coverage"),
+    ("Multi-document complete coverage", "multi_document_complete_coverage"),
+    ("Citation structure valid", "citation_shape"),
+    ("Citation IDs resolve to local index", "citations_resolve"),
+    ("Required-tool recall", "tool_required_recall"),
+    ("Required-tool complete coverage", "tool_required_coverage"),
+    ("Workflow completion", "workflow_completion"),
+    ("Confirmation/action contract", "action_confirmation_contract"),
+    ("Confirmed mock-action completion", "confirmed_action_completion"),
+    ("Groundedness (automatic proxy)", "groundedness_proxy"),
+    ("HTTP success", "http_success"),
+)
+LATENCY_METRICS = (("Latency p50", "latency_p50_ms"), ("Latency p95", "latency_p95_ms"))
+
+
+def _utc_timestamp() -> str:
+    """Return a stable, explicit UTC timestamp for evaluation provenance."""
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _evaluator_git_sha() -> str:
+    """Capture the local evaluator revision when this runs from a Git checkout."""
+    try:
+        completed = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=SET_PATH.parent.parent,
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=2,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return "unknown"
+    return completed.stdout.strip() or "unknown"
+
+
+def evaluation_set_sha256() -> str:
+    """Identify the exact versioned questions used in an evaluation run."""
+    return hashlib.sha256(SET_PATH.read_bytes()).hexdigest()
+
+
+async def fetch_deployment_health(base_url: str) -> dict[str, Any]:
+    """Read non-secret deployment facts before a billable HTTP evaluation.
+
+    `/health` now asks the MCP child for its status. This preserves the actual
+    child backend/model alongside the evaluation instead of inferring it from a
+    retrieval-score range or from a web-process environment variable.
+    """
+    url = base_url.rstrip("/")
+    try:
+        async with httpx.AsyncClient(base_url=url, timeout=httpx.Timeout(HTTP_TIMEOUT_SECONDS)) as client:
+            response = await client.get("/health")
+            decoded = response.json()
+        return {
+            "http_status": response.status_code,
+            "payload": decoded if isinstance(decoded, dict) else {"raw": str(decoded)[:240]},
+        }
+    except (httpx.HTTPError, ValueError) as exc:
+        return {"http_status": None, "error": f"{type(exc).__name__}: {exc}"[:240]}
+
+
+def _require_expected_backend(health: dict[str, Any], expected_backend: str) -> None:
+    """Fail before the 29 requests if child-side deployment evidence is wrong."""
+    payload = health.get("payload")
+    observed = payload.get("rag_backend") if isinstance(payload, dict) else None
+    source = payload.get("rag_status_source") if isinstance(payload, dict) else None
+    if health.get("http_status") != 200 or observed != expected_backend or source != "mcp_child":
+        raise RuntimeError(
+            "Deployment health did not verify the requested MCP-child backend "
+            f"{expected_backend!r}; observed HTTP {health.get('http_status')}, backend {observed!r}, "
+            f"status source {source!r}."
+        )
+
+
+def build_provenance(
+    *,
+    base_url: str | None,
+    run_count: int,
+    deployment_revision: str | None,
+    deployment_model: str | None,
+    expected_backend: str | None,
+    deployment_health: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """Build auditable, non-secret metadata for a repeated evaluation artifact."""
+    return {
+        "mode": "http" if base_url else "local",
+        "base_url": base_url,
+        "run_count": run_count,
+        "evaluation_set_sha256": evaluation_set_sha256(),
+        "evaluator_git_sha": _evaluator_git_sha(),
+        "requested_deployment_revision": deployment_revision or "not supplied",
+        "requested_deployment_model": deployment_model or "not supplied",
+        "required_mcp_child_backend": expected_backend or "not required",
+        "deployment_health": deployment_health,
+    }
+
+
+async def run_repeated(
+    cases: list[dict[str, Any]], runs: int, base_url: str | None = None
+) -> list[dict[str, Any]]:
+    """Run full evaluations sequentially and retain every response set.
+
+    Sequential execution is intentional: parallel calls would contend for a
+    small free-tier service and can distort latency, tool ordering, and rate
+    limits. The returned records are kept intact for artifacts rather than
+    cherry-picking a strongest run.
+    """
+    if runs < 1:
+        raise ValueError("runs must be at least 1")
+
+    records: list[dict[str, Any]] = []
+    for run_number in range(1, runs + 1):
+        started_at_utc = _utc_timestamp()
+        rows = await run_once(cases, base_url=base_url)
+        finished_at_utc = _utc_timestamp()
+        records.append({
+            "run_number": run_number,
+            "started_at_utc": started_at_utc,
+            "finished_at_utc": finished_at_utc,
+            "rows": rows,
+            "summary": summarise(rows, base_url=base_url),
+        })
+    return records
+
+
+def aggregate_summaries(summaries: list[dict[str, Any]]) -> dict[str, Any]:
+    """Calculate median and min/max across full runs, never a best-run score."""
+    if not summaries:
+        raise ValueError("at least one evaluation summary is required")
+
+    metrics: list[dict[str, Any]] = []
+    for label, key in RATE_METRICS:
+        details = [summary["metric_details"][key] for summary in summaries]
+        values = [float(detail["fraction"]) for detail in details if detail["fraction"] is not None]
+        metrics.append({
+            "label": label,
+            "key": key,
+            "unit": "rate",
+            "median": statistics.median(values) if values else None,
+            "minimum": min(values) if values else None,
+            "maximum": max(values) if values else None,
+            "individual": [summary[key] for summary in summaries],
+        })
+
+    for label, key in LATENCY_METRICS:
+        values = [float(summary[key]) for summary in summaries]
+        metrics.append({
+            "label": label,
+            "key": key,
+            "unit": "ms",
+            "median": statistics.median(values),
+            "minimum": min(values),
+            "maximum": max(values),
+            "individual": [f"{value:.1f} ms" for value in values],
+        })
+
+    return {"run_count": len(summaries), "metrics": metrics}
+
+
+def _render_provenance(provenance: dict[str, Any]) -> list[str]:
+    """Render the safe facts needed to reproduce or challenge an evaluation."""
+    lines = ["## Run provenance", ""]
+    lines += [
+        f"- Evaluation set SHA-256: `{provenance['evaluation_set_sha256']}`",
+        f"- Evaluator Git SHA: `{provenance['evaluator_git_sha']}`",
+        f"- Requested deployment revision: `{provenance['requested_deployment_revision']}`",
+        f"- Requested deployment model: `{provenance['requested_deployment_model']}`",
+        f"- Required MCP-child backend: `{provenance['required_mcp_child_backend']}`",
+    ]
+    health = provenance.get("deployment_health")
+    if isinstance(health, dict):
+        payload = health.get("payload")
+        if isinstance(payload, dict):
+            lines.append(
+                "- Deployment health before evaluation: "
+                f"HTTP {health.get('http_status')}; status source `{payload.get('rag_status_source')}`; "
+                f"child backend `{payload.get('rag_backend')}`; "
+                f"configured backend `{payload.get('configured_rag_backend')}`; "
+                f"model `{payload.get('rag_model')}`."
+            )
+        else:
+            lines.append(f"- Deployment health before evaluation: HTTP {health.get('http_status')}; unavailable.")
+    lines.append("")
+    return lines
+
+
+def render_repeated(
+    records: list[dict[str, Any]], aggregate: dict[str, Any], provenance: dict[str, Any]
+) -> str:
+    """Render an honest median/range report for sequential repeated runs."""
+    summaries = [record["summary"] for record in records]
+    source = "local agent" if summaries[0]["mode"] == "local" else f"deployed HTTP: `{summaries[0]['base_url']}`"
+    lines = [
+        "# Evaluation Results",
+        "",
+        f"Mode: {source} · sequential full runs: {aggregate['run_count']} · "
+        "generated by `python -m evaluation.run_eval`.",
+        "",
+        *_render_provenance(provenance),
+        "## Repeated-run summary",
+        "",
+        "Each row is the median and min–max range across complete sequential runs. "
+        "This shows observed variability; it is not a confidence interval or formal error bars.",
+        "",
+        "| Metric | Median | Range | Individual runs |",
+        "| --- | --- | --- | --- |",
+    ]
+    for metric in aggregate["metrics"]:
+        if metric["median"] is None:
+            median, value_range = "n/a", "n/a"
+        elif metric["unit"] == "rate":
+            median = f"{metric['median']:.0%}"
+            value_range = f"{metric['minimum']:.0%}–{metric['maximum']:.0%}"
+        else:
+            median = f"{metric['median']:.1f} ms"
+            value_range = f"{metric['minimum']:.1f}–{metric['maximum']:.1f} ms"
+        lines.append(
+            f"| {metric['label']} | {median} | {value_range} | {'; '.join(metric['individual'])} |"
+        )
+
+    lines += [
+        "",
+        "## Individual run summaries",
+        "",
+        "| Run | UTC start | Planner | End-to-end | Answer rubric | Citation precision | Workflow | p95 latency |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- |",
+    ]
+    for record in records:
+        summary = record["summary"]
+        lines.append(
+            f"| {record['run_number']} | {record['started_at_utc']} | {summary['planner']} | "
+            f"{summary['end_to_end_pass_rate']} | {summary['answer_rubric_accuracy']} | "
+            f"{summary['citation_document_precision']} | {summary['workflow_completion']} | "
+            f"{summary['latency_p95_ms']:.1f} ms |"
+        )
+    lines += [
+        "",
+        "All per-case synthetic answers, citations, MCP traces, and raw run summaries are retained "
+        "in `evaluation/artifacts.json` for human review; no strongest run was selected for reporting.",
+        "",
+    ]
+    return "\n".join(lines)
 
 
 def _yes(value: bool | None) -> str:
@@ -434,7 +752,12 @@ def _yes(value: bool | None) -> str:
     return "y" if value else "n"
 
 
-def render(summary: dict[str, Any], rows: list[dict[str, Any]], ablation: list[dict[str, Any]]) -> str:
+def render(
+    summary: dict[str, Any],
+    rows: list[dict[str, Any]],
+    ablation: list[dict[str, Any]],
+    provenance: dict[str, Any] | None = None,
+) -> str:
     source = "local agent" if summary["mode"] == "local" else f"deployed HTTP: `{summary['base_url']}`"
     lines = [
         "# Evaluation Results",
@@ -442,6 +765,12 @@ def render(summary: dict[str, Any], rows: list[dict[str, Any]], ablation: list[d
         f"Mode: {source} · planner: `{summary['planner']}` · cases: {summary['cases']} · "
         "generated by `python -m evaluation.run_eval`.",
         "",
+    ]
+
+    if provenance is not None:
+        lines += _render_provenance(provenance)
+
+    lines += [
         "| Metric | Result |",
         "| --- | --- |",
         f"| Behaviour accuracy | {summary['behaviour_accuracy']} |",
@@ -524,17 +853,47 @@ def render(summary: dict[str, Any], rows: list[dict[str, Any]], ablation: list[d
     return "\n".join(lines) + "\n"
 
 
+ARTIFACT_FIELDS = (
+    "id", "type", "question", "expected_answer", "expected_behavior", "answer",
+    "required_claims_matched", "required_claims_total", "missing_claims", "prohibited_hits",
+    "expected_documents", "cited_documents", "citations", "expected_tools", "tools_called",
+    "trace", "mock_action", "planner", "overall_ok", "latency_ms", "http_status", "http_error",
+)
+
+
+def _artifact_cases(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Retain bounded, synthetic evidence needed to audit one evaluation run."""
+    return [{field: row.get(field) for field in ARTIFACT_FIELDS} for row in rows]
+
+
 def write_artifacts(rows: list[dict[str, Any]], path: Path) -> None:
-    """Persist synthetic per-case evidence so the summary report is auditable."""
-    fields = (
-        "id", "type", "question", "expected_answer", "expected_behavior", "answer",
-        "required_claims_matched", "required_claims_total", "missing_claims", "prohibited_hits",
-        "expected_documents", "cited_documents", "citations", "expected_tools", "tools_called",
-        "trace", "mock_action", "planner", "overall_ok", "latency_ms", "http_status", "http_error",
-    )
+    """Persist single-run synthetic evidence in the original v1 artifact shape."""
     payload = {
         "notice": "Synthetic evaluation artifacts only. Do not add real employee or workplace data.",
-        "cases": [{field: row.get(field) for field in fields} for row in rows],
+        "cases": _artifact_cases(rows),
+    }
+    path.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+
+
+def write_repeated_artifacts(
+    records: list[dict[str, Any]], path: Path, provenance: dict[str, Any], aggregate: dict[str, Any]
+) -> None:
+    """Persist every repeated-run response set in an explicit v2 artifact shape."""
+    payload = {
+        "schema_version": 2,
+        "notice": "Synthetic evaluation artifacts only. Do not add real employee or workplace data.",
+        "provenance": provenance,
+        "aggregate": aggregate,
+        "runs": [
+            {
+                "run_number": record["run_number"],
+                "started_at_utc": record["started_at_utc"],
+                "finished_at_utc": record["finished_at_utc"],
+                "summary": record["summary"],
+                "cases": _artifact_cases(record["rows"]),
+            }
+            for record in records
+        ],
     }
     path.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
@@ -596,6 +955,12 @@ async def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--ablation", action="store_true", help="sweep local retrieval k")
     parser.add_argument(
+        "--runs",
+        type=int,
+        default=1,
+        help="number of complete sequential evaluation runs (default: 1)",
+    )
+    parser.add_argument(
         "--base-url",
         help="POST evaluation cases to this deployed service's /chat endpoint instead of running locally",
     )
@@ -605,24 +970,61 @@ async def main() -> None:
         default=str(Path(__file__).parent / "artifacts.json"),
         help="write synthetic per-case answer/citation/trace evidence to this JSON path",
     )
+    parser.add_argument(
+        "--deployment-revision",
+        help="operator-supplied deployed Git revision recorded as non-secret provenance",
+    )
+    parser.add_argument(
+        "--deployment-model",
+        help="operator-supplied deployed model recorded as non-secret provenance",
+    )
+    parser.add_argument(
+        "--require-rag-backend",
+        choices=("lexical", "dense"),
+        help="fail before evaluation unless /health verifies this MCP-child backend",
+    )
     args = parser.parse_args()
 
     if args.base_url and not args.base_url.startswith(("http://", "https://")):
         parser.error("--base-url must start with http:// or https://")
     if args.base_url and args.ablation:
         parser.error("--ablation is local-only; omit it when using --base-url")
+    if args.runs < 1:
+        parser.error("--runs must be at least 1")
+    if args.runs > 1 and args.ablation:
+        parser.error("--ablation is a single deterministic local sweep; run it separately")
+    if args.require_rag_backend and not args.base_url:
+        parser.error("--require-rag-backend requires --base-url")
 
     cases = load_cases()
     if not args.base_url:
         build_index()
 
-    rows = await run_once(cases, base_url=args.base_url)
-    summary = summarise(rows, base_url=args.base_url)
-    ablation = retrieval_ablation(cases) if args.ablation else []
+    deployment_health = await fetch_deployment_health(args.base_url) if args.base_url else None
+    if args.require_rag_backend:
+        _require_expected_backend(deployment_health or {}, args.require_rag_backend)
+    provenance = build_provenance(
+        base_url=args.base_url,
+        run_count=args.runs,
+        deployment_revision=args.deployment_revision,
+        deployment_model=args.deployment_model,
+        expected_backend=args.require_rag_backend,
+        deployment_health=deployment_health,
+    )
 
-    Path(args.out).write_text(render(summary, rows, ablation), encoding="utf-8")
-    write_artifacts(rows, Path(args.artifacts_out))
-    print(json.dumps(summary, indent=2))
+    if args.runs == 1:
+        rows = await run_once(cases, base_url=args.base_url)
+        summary = summarise(rows, base_url=args.base_url)
+        ablation = retrieval_ablation(cases) if args.ablation else []
+        Path(args.out).write_text(render(summary, rows, ablation, provenance), encoding="utf-8")
+        write_artifacts(rows, Path(args.artifacts_out))
+        print(json.dumps(summary, indent=2))
+    else:
+        records = await run_repeated(cases, args.runs, base_url=args.base_url)
+        aggregate = aggregate_summaries([record["summary"] for record in records])
+        Path(args.out).write_text(render_repeated(records, aggregate, provenance), encoding="utf-8")
+        write_repeated_artifacts(records, Path(args.artifacts_out), provenance, aggregate)
+        print(json.dumps({"provenance": provenance, "aggregate": aggregate}, indent=2))
     print(f"\nWrote {args.out} and {args.artifacts_out}")
 
 

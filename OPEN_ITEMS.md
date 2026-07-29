@@ -5,14 +5,16 @@ a live host, or human review. It prevents a local deterministic test run—or an
 old public evaluation—from being presented as evidence about a newer planner
 revision.
 
-## Verified: live LLM planner and public HTTP evaluation
+## Verified: live LLM planner and lexical-runtime public HTTP evaluation
 
 Render is the submitted host. Its `/health` endpoint and 29-case public HTTP
 evaluation are recorded in `deployed.md`, `evaluation/results.md`, and
 `evaluation/artifacts.json`. The artifacts show real `planner: "llm"` responses
 alongside deterministic safety-gate responses; they are not a fallback-only
 test. The report deliberately labels that mixture rather than calling every
-case an LLM decision.
+case an LLM decision. That run predates `94639a7`: the parent was configured
+for dense retrieval but the MCP child used lexical retrieval, so it is not
+dense-RAG evidence.
 
 The committed default is `gpt-5.6-luna`. A response proves that an LLM planner
 ran, but it does not by itself prove the exact host model override or deployed
@@ -26,7 +28,9 @@ revision and run both the retrieval ablation and the public HTTP evaluation:
 
 ```bash
 python -m evaluation.run_eval --ablation
-python -m evaluation.run_eval --base-url https://clearhr-agentic-hr-assistant.onrender.com
+python -m evaluation.run_eval --base-url https://clearhr-agentic-hr-assistant.onrender.com --runs 3 \
+  --require-rag-backend dense --deployment-revision <deployed-sha> \
+  --deployment-model gpt-5.6-luna
 ```
 
 Commit the resulting `evaluation/results.md` and `evaluation/artifacts.json`.
@@ -34,11 +38,16 @@ The remote mode records HTTP status and client-observed latency but correctly
 does not claim remote citation IDs resolve to the local index. Review failures;
 do not weaken an answer rubric merely to inflate a score.
 
-## Blocking: finish public-service measurement
+## Blocking: deploy and verify dense retrieval, then repeat public evaluation
 
-The current report contains the fresh post-dense 29-case public run. What
-remains is one cold request after Render inactivity. Record that observation in
-`deployed.md`.
+The current report is a 29-case lexical MCP-child runtime baseline. It must not
+be presented as evidence for dense end-to-end performance. Deploy the current
+revision, then require `/health` to show `rag_status_source: mcp_child`,
+matching child `rag_backend: dense`, parent `configured_rag_backend: dense`,
+and `dense_encoder_loaded: true`.
+Only then run the three sequential public HTTP evaluations and replace the
+report/artifacts with median/min–max dense results. Record one cold request
+after Render inactivity in `deployed.md` as part of that deployment evidence.
 
 The MCP stdio subprocess is started once at service boot rather than per
 request, so its ~0.6 s process-start cost is paid at startup and not on every
@@ -48,19 +57,21 @@ unmeasured in public is the host's wake-from-idle time and real LLM latency.
 
 ## Blocking: finish dense-host resource measurement
 
-The submitted Render service now runs `RAG_BACKEND=dense` with local FastEmbed
-`BAAI/bge-small-en-v1.5` vectors and a versioned `data/index.dense.json` store.
+The Render configuration requests `RAG_BACKEND=dense` with local FastEmbed
+`BAAI/bge-small-en-v1.5` vectors and a versioned `data/index.dense.json` store,
+but it must redeploy the current revision before the MCP child can be considered dense.
 The local retriever comparison in
 [`evaluation/dense_rag_comparison.md`](evaluation/dense_rag_comparison.md)
 improves default-k expected-document recall from 64% to 82% and complete
 required-document coverage from 60% to 80%. Those are **local retrieval**
-results only, but the post-dense public HTTP evaluation is now recorded in
-`evaluation/results.md`.
+results only. The current public HTTP report is lexical-child evidence; the
+verified dense public evaluation is still pending.
 
 Dense Python-3.11 `ensure_ready()` plus one query measured 292,932 KB maximum RSS locally.
-Render's dense build and live HTTP evaluation succeeded, but total host RSS and
-wake-from-idle cold boot/warm latency remain unmeasured on the 512 MB free
-service. Follow `DEPLOYMENT_GUIDE.md` to record them. Set
+Render's dense build succeeded, but its pre-fix HTTP evaluation was lexical at
+runtime; total host RSS and wake-from-idle cold boot/warm latency remain
+unmeasured on the 512 MB free service. Follow `DEPLOYMENT_GUIDE.md` to record
+them after the fixed deployment. Set
 `RAG_BACKEND=lexical` to roll back without code or data migration if the host
 limit is approached.
 

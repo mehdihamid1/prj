@@ -149,12 +149,18 @@ def test_only_authorised_discovered_tools_are_exposed_to_the_model():
         "description": "An intentionally unclassified future capability.",
         "inputSchema": {"type": "object", "properties": {}},
     }
+    diagnostic_tool = {
+        "name": "get_retrieval_status",
+        "description": "Operational MCP-child retrieval status.",
+        "inputSchema": {"type": "object", "properties": {}},
+    }
 
-    authorised = planner._authorised_tools([*discovered, future_tool])
+    authorised = planner._authorised_tools([*discovered, future_tool, diagnostic_tool])
     exposed_names = {tool["function"]["name"] for tool in planner._to_openai_tools(authorised)}
 
     assert exposed_names >= {"search_policy_documents", "check_pto_balance"}
     assert "delete_employee_record" not in exposed_names
+    assert "get_retrieval_status" not in exposed_names
 
 
 def test_planner_dispatches_tool_call_and_records_trace(monkeypatch):
