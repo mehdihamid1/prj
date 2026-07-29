@@ -117,7 +117,7 @@ python -m evaluation.run_eval --base-url https://your-service.example
 - [ ] Submit through the course dashboard. For a group, one member submits on behalf of
       the group and uploads the signed final page of the Group Project Agreement if asked
 
-Known gaps, verified evidence, and deliberate trade-offs are tracked in [OPEN_ITEMS.md](OPEN_ITEMS.md), including the semantic-vector-store rubric risk, cold-start measurement, the post-deploy evaluation rerun, and the remaining submission actions.
+The brief's requirements are tracked item by item, with the evidence for each, in [SUBMISSION_REQUIREMENTS.md](SUBMISSION_REQUIREMENTS.md). Known gaps, verified evidence, and deliberate trade-offs are tracked in [OPEN_ITEMS.md](OPEN_ITEMS.md), including the semantic-vector-store rubric risk, cold-start measurement, the post-deploy evaluation rerun, and the remaining submission actions.
 
 ## AI assistance
 
