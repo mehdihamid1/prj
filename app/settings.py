@@ -75,6 +75,22 @@ def llm_enabled() -> bool:
     return bool(openai_api_key())
 
 
+def deployed_commit() -> str:
+    """Short commit the running process was built from, or ``unknown``.
+
+    Render and Railway both inject the deployed revision, so nothing has to be
+    set by hand in the dashboard. The host's Events tab records which commit a
+    deploy *built*; this reports what the process *answering the request* came
+    from, which is what a rollback or a surviving old instance makes ambiguous.
+    A public commit hash is not a secret.
+    """
+    for name in ("RENDER_GIT_COMMIT", "RAILWAY_GIT_COMMIT_SHA", "GIT_COMMIT"):
+        value = os.getenv(name, "").strip()
+        if value:
+            return value[:7]
+    return "unknown"
+
+
 def expose_planner_errors() -> bool:
     """Opt-in diagnostics for a failing LLM planner.
 

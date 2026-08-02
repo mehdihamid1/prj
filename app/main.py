@@ -166,6 +166,7 @@ async def health():
                     "rag_status_source": "mcp_child",
                     "rag_backend": child_backend,
                     "configured_rag_backend": configured_backend,
+                    "commit": settings.deployed_commit(),
                 },
                 headers={"Cache-Control": "no-store"},
             )
@@ -173,8 +174,11 @@ async def health():
         # All fields are non-secret operational facts. `rag_backend` is the
         # value returned by the child, while `configured_rag_backend` makes a
         # future mismatch diagnosable without revealing provider credentials.
+        # `commit` identifies the build actually serving, so a stale instance or
+        # a rollback is visible from the URL rather than only in the host's UI.
         return {
             "status": "ok",
+            "commit": settings.deployed_commit(),
             "mcp_connected": True,
             "rag_status_source": "mcp_child",
             "mcp_tool_count": len(tools),
@@ -199,6 +203,7 @@ async def health():
                 "mcp_connected": False,
                 "rag_backend": settings.rag_backend(),
                 "configured_rag_backend": settings.rag_backend(),
+                "commit": settings.deployed_commit(),
             },
             headers={"Cache-Control": "no-store"},
         )

@@ -47,7 +47,7 @@ def test_health_returns_safe_503_when_mcp_is_unavailable(monkeypatch):
     # The degraded body may carry non-secret deployment facts such as the active
     # retriever, but never the exception text, which can name internal detail.
     assert set(body) <= {
-        "status", "mcp_connected", "rag_backend", "configured_rag_backend",
+        "status", "mcp_connected", "rag_backend", "configured_rag_backend", "commit",
     }
     assert b"internal-token-value" not in result.body
 
@@ -175,6 +175,37 @@ def test_health_reports_the_mcp_child_rag_backend(monkeypatch):
     assert payload["status"] == "ok"
 
 
+def test_health_reports_the_host_injected_commit(monkeypatch):
+    """The deployed build must be identifiable from the URL, not just the host UI."""
+    from app import settings
+
+    async def tools():
+        return [{"name": "get_retrieval_status"}]
+
+    async def child_status():
+        return {"rag_backend": "dense", "index_backend": "dense"}
+
+    monkeypatch.setattr(settings, "rag_backend", lambda: "dense")
+    monkeypatch.setattr(main, "discover_tools", tools)
+    monkeypatch.setattr(main.mcp_client, "retrieval_status", child_status)
+    monkeypatch.setenv("RENDER_GIT_COMMIT", "75c0fcf1234567890abcdef")
+
+    assert asyncio.run(main.health())["commit"] == "75c0fcf"
+
+
+def test_deployed_commit_falls_back_when_no_host_variable_is_set(monkeypatch):
+    """Local runs and CI have no host revision; report that instead of guessing."""
+    from app import settings
+
+    for name in ("RENDER_GIT_COMMIT", "RAILWAY_GIT_COMMIT_SHA", "GIT_COMMIT"):
+        monkeypatch.delenv(name, raising=False)
+
+    assert settings.deployed_commit() == "unknown"
+
+    monkeypatch.setenv("RAILWAY_GIT_COMMIT_SHA", "abcdef1234567")
+    assert settings.deployed_commit() == "abcdef1"
+
+
 def test_health_returns_safe_503_when_parent_and_child_backend_disagree(monkeypatch):
     async def tools():
         return [{"name": "get_retrieval_status"}]
@@ -196,4 +227,5 @@ def test_health_returns_safe_503_when_parent_and_child_backend_disagree(monkeypa
         "rag_status_source": "mcp_child",
         "rag_backend": "lexical",
         "configured_rag_backend": "dense",
+        "commit": "unknown",
     }

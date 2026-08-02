@@ -83,7 +83,7 @@ Two consequences for presenting this service:
 
 ## Deployment configuration
 
-The repository includes `render.yaml` and `railway.toml`. Either creates one web service with a build command that creates the selected RAG index, runs tests, then uses the `uvicorn` start command and `/health` health check. Use only one host for the final submission, then paste its public URLs above. A healthy deployment returns HTTP 200 with `status: ok`, `mcp_connected: true`, `rag_status_source: mcp_child`, and matching child `rag_backend` / parent `configured_rag_backend`; HTTP 503 means the local MCP subprocess is unavailable or misconfigured and must be fixed before recording.
+The repository includes `render.yaml` and `railway.toml`. Either creates one web service with a build command that creates the selected RAG index, then uses the `uvicorn` start command and `/health` health check. Render gates its automatic deploys on GitHub CI instead of repeating the suite in the build; Railway runs the tests in its build. Use only one host for the final submission, then paste its public URLs above. A healthy deployment returns HTTP 200 with `status: ok`, `mcp_connected: true`, `rag_status_source: mcp_child`, and matching child `rag_backend` / parent `configured_rag_backend`; HTTP 503 means the local MCP subprocess is unavailable or misconfigured and must be fixed before recording.
 
 Follow [DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md) for step-by-step Render and Railway instructions.
 
