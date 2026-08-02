@@ -56,9 +56,9 @@ not a claim about every end-to-end answer.
 
 Dense Python-3.11 `ensure_ready()` plus one query measured 292,932 KB maximum
 RSS locally. The child-side dense backend and public evaluation are verified,
-but total Render host RSS and wake-from-idle cold-start latency remain
-unmeasured on the 512 MB free service. Record those before making a free-tier
-resource claim. Set `RAG_BACKEND=lexical` to roll back without code or data
+and the wake-from-idle cold start was measured on 2026-07-29 at 42.5 s
+(`deployed.md`). Total Render host RSS remains unmeasured on the 512 MB free
+service; record it before making a free-tier memory claim. Set `RAG_BACKEND=lexical` to roll back without code or data
 migration if the host limit is approached.
 
 ## Blocking: share the repository with the grader

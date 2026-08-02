@@ -14,7 +14,7 @@ Status keys: **done** — present and checked; **pending** — not yet done;
 | For **each** agentic task, explain how the agent calls MCP tools: tool **names**, **arguments**, **outputs**, **retrieved citations**, and the **final answer or action** | [DEMO_RUNBOOK.md](DEMO_RUNBOOK.md) gives the screen sequence and the exact narration per tool. The `/chat` response carries `trace[].tool`, `trace[].arguments`, `trace[].result_preview`, `citations[]`, and `answer`, and the UI renders all five | **owner-only** |
 | Quick walkthrough of **design** | Architecture diagrams in [design-and-evaluation.md](design-and-evaluation.md) | **owner-only** |
 | Quick walkthrough of **deployment** | [deployed.md](deployed.md) and [DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md) | **owner-only** |
-| Quick walkthrough of **CI/CD** | [.github/workflows/ci.yml](.github/workflows/ci.yml); Render gates on `autoDeployTrigger: checksPass` and the host build reruns the suite | **owner-only** |
+| Quick walkthrough of **CI/CD** | [.github/workflows/ci.yml](.github/workflows/ci.yml); Render gates automatic deploys on `autoDeployTrigger: checksPass` rather than repeating the suite in the host build, and `/health` plus the startup log report the deployed commit | **owner-only** |
 | Quick walkthrough of **evaluation results** | [evaluation/results.md](evaluation/results.md) | **owner-only** |
 | Length 7–10 minutes | — | **pending** |
 
@@ -36,7 +36,7 @@ safety gate and the confirmation-required mock ticket.
 | `README.md` — introductory description, setup, local run, deployment instructions | [README.md](README.md) | **done** |
 | `design-and-evaluation.md` | [design-and-evaluation.md](design-and-evaluation.md) — see the per-topic breakdown below | **done** |
 | `ai-tooling.md` — which AI code tools were used and how, what worked well and what did not | [ai-tooling.md](ai-tooling.md) | **done** |
-| `deployed.md` — deployed URL, health endpoint URL, free-tier cold-start notes | [deployed.md](deployed.md) | **partial** — cold start not yet measured |
+| `deployed.md` — deployed URL, health endpoint URL, free-tier cold-start notes | [deployed.md](deployed.md) | **done** — cold start measured 2026-07-29 at 42.5 s |
 | `evaluation/` — questions, expected answers or rubrics, scripts, reported results | [evaluation/evaluation_set.json](evaluation/evaluation_set.json), [run_eval.py](evaluation/run_eval.py), [results.md](evaluation/results.md), [artifacts.json](evaluation/artifacts.json), and [dense_rag_comparison.md](evaluation/dense_rag_comparison.md) | **done** |
 | `mock_data/` — synthetic employee, PTO, benefits and/or ticket data | [mock_data/](mock_data/) — `employees.json`, `pto_balances.json`, `benefits.json`. Tickets are drafted at request time and never persisted, so no ticket file exists; the brief requires this data only "if used" | **done** |
 | `mcp/` — MCP server code and tool definitions | [mcp/README.md](mcp/README.md) documents the layer and the six tool schemas. The executable server is [app/mcp_server.py](app/mcp_server.py); it is **not** placed under `mcp/` because that directory would shadow the installed `mcp` SDK package on import. The reason is recorded in `mcp/README.md` | **done** |

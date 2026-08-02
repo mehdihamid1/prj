@@ -45,8 +45,9 @@ and artifacts before presenting updated results. The local retriever comparison
 remains in [evaluation/dense_rag_comparison.md](evaluation/dense_rag_comparison.md).
 
 A local Python-3.11 dense process measured 292,932 KB maximum RSS. The live
-service's total parent-plus-MCP-child RSS and one wake-from-idle cold request
-remain unmeasured; record those before presenting a free-tier resource claim.
+service's total parent-plus-MCP-child RSS remains unmeasured; record it before
+presenting a free-tier memory claim. The wake-from-idle cold request is measured
+below.
 `RAG_BACKEND=lexical` remains the immediate rollback.
 
 A Railway deployment, if any, is **not** part of the submission. Treat it as a
@@ -92,5 +93,5 @@ Follow [DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md) for step-by-step Render and Ra
 The first request after inactivity may be slower because the host wakes the
 service and starts the MCP subprocess, which loads the selected RAG backend.
 The recorded three-run warm HTTP evaluation is verified dense-runtime evidence;
-the cold-start observation remains outstanding. Do not enter `OPENAI_API_KEY`
-or any other secret in this file.
+the cold path is measured separately under **Cold start** above. Do not enter
+`OPENAI_API_KEY` or any other secret in this file.
