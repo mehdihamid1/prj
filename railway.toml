@@ -1,6 +1,8 @@
 [build]
 builder = "RAILPACK"
-buildCommand = "pip install -r requirements.txt && python scripts/build_rag_index.py && RAG_BACKEND=lexical python -m pytest -q"
+# Railway has no equivalent of Render's checksPass gate, so it keeps the
+# in-host test run and therefore needs the dev-only test dependencies.
+buildCommand = "pip install -r requirements-dev.txt && python scripts/build_rag_index.py && RAG_BACKEND=lexical python -m pytest -q"
 
 [deploy]
 startCommand = "uvicorn app.main:app --host 0.0.0.0 --port $PORT"

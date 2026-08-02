@@ -25,7 +25,7 @@ The orchestrator never reads the policy index or the employee records directly. 
 ```bash
 python -m venv .venv
 source .venv/bin/activate
-pip install -r requirements.txt
+pip install -r requirements-dev.txt
 cp .env.example .env          # optional; add OPENAI_API_KEY to enable the LLM planner
 uvicorn app.main:app --reload
 ```
@@ -108,7 +108,7 @@ Configured for either platform as a **single web service**, with no database and
 - **Render** — *New → Blueprint*, select this repository. [render.yaml](render.yaml) declares the runtime, build and start commands, free plan, and `/health` check.
 - **Railway** — create a project from the repository. [railway.toml](railway.toml) configures Railpack, the same build command, and the health check. Generate a public domain after the first successful deploy.
 
-Deployment is gated by the host build command, which creates the configured RAG index and runs `python -m pytest -q` — a failing test fails the build, and a failed build never replaces the running service. On Render, [render.yaml](render.yaml) additionally uses `autoDeployTrigger: checksPass`, so automatic deploys wait for GitHub checks; Railway uses the tested host build as its in-host gate. Set `OPENAI_API_KEY` in the host's environment-variable settings only; never commit it. Leave `OPENAI_MODEL` unset so the cost-sensitive `gpt-5.6-luna` default applies, or set it explicitly to the same value. The running app launches and calls its MCP server over stdio, even in the single-service deployment. `/health` returns HTTP 503 if that MCP connection is unavailable **or** if the web parent and MCP child disagree on the backend. Its `rag_backend` comes from the child-owned `get_retrieval_status` MCP call, while `configured_rag_backend` shows the parent setting and `rag_status_source: "mcp_child"` proves this newer health contract is deployed. The submitted Render service intentionally uses dense RAG; local/CI and the unverified Railway path intentionally retain lexical as the dependency-light default and rollback.
+Deployment builds the configured RAG index. On Render, [render.yaml](render.yaml) uses `autoDeployTrigger: checksPass`, so automatic deploys wait for GitHub CI and do not repeat the test suite or install dev-only packages in the host build; Railway retains its in-host test gate. Set `OPENAI_API_KEY` in the host's environment-variable settings only; never commit it. Leave `OPENAI_MODEL` unset so the cost-sensitive `gpt-5.6-luna` default applies, or set it explicitly to the same value. The running app launches and calls its MCP server over stdio, even in the single-service deployment. `/health` returns HTTP 503 if that MCP connection is unavailable **or** if the web parent and MCP child disagree on the backend. Its `rag_backend` comes from the child-owned `get_retrieval_status` MCP call, while `configured_rag_backend` shows the parent setting and `rag_status_source: "mcp_child"` proves this newer health contract is deployed. The submitted Render service intentionally uses dense RAG; local/CI and the unverified Railway path intentionally retain lexical as the dependency-light default and rollback.
 
 `/chat` also has a small process-local cost guard by default (30 requests per client and 60 total per 60 seconds). It is suitable for a one-instance coursework demo, not a replacement for authentication, an edge rate limiter, or a production privacy review.
 

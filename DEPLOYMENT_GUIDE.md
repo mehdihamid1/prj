@@ -32,20 +32,21 @@ and commands below rather than relying on an old screenshot.
    | --- | --- |
    | Runtime | Python |
    | Plan | Free |
-   | Build command | `pip install --disable-pip-version-check -r requirements.txt && python scripts/build_rag_index.py && RAG_BACKEND=lexical python -m pytest -q` |
+   | Build command | `pip install --disable-pip-version-check -r requirements.txt && python scripts/build_rag_index.py` |
    | Start command | `uvicorn app.main:app --host 0.0.0.0 --port $PORT` |
    | Health check | `/health` |
 
    `render.yaml` also sets `autoDeployTrigger: checksPass`, so an automatic
-   Render deploy waits for the linked branch's GitHub checks before its own
-   build reruns the tests.
+   Render deploy waits for the linked branch's GitHub checks. The host build
+   therefore does not repeat the test suite or install its development-only
+   dependencies. `scripts/build_rag_index.py` inherits the Blueprint's
+   `RAG_BACKEND=dense`, so Render builds and serves dense retrieval.
 
-   The `RAG_BACKEND=lexical` suffix in the build command scopes only the
-   `pytest` process. `scripts/build_rag_index.py` runs first and inherits the
-   Blueprint's `RAG_BACKEND=dense`, so Render builds the dense index and serves
-   dense retrieval while tests retain the deterministic lexical backend.
+   That gate covers automatic deploys only. The first Blueprint apply and any
+   manual **Deploy latest commit** run regardless of GitHub check status, so
+   confirm the commit's CI run is green before triggering either by hand.
 
-6. Click **Apply** / **Create Blueprint** and watch the deployment log. The build must finish with passing tests before Render starts the web service.
+6. Click **Apply** / **Create Blueprint** and watch the deployment log.
 7. In the service's **Environment** settings, add `OPENAI_API_KEY`. Leave `OPENAI_MODEL` unset so the committed `gpt-5.6-luna` default applies, or set it explicitly to `gpt-5.6-luna`. The submitted `render.yaml` pins `RAG_BACKEND=dense` so the build and runtime agree. To roll back, change that Blueprint value to `lexical` and rebuild; do not rely on a conflicting environment-group value. Do not point a shared service at a costlier model: every collaborator's request is billed to the deployment owner's account. Do not put secrets in `render.yaml`, a commit, or a screenshot. The default 60-second demo guard is 30 requests per client and 60 total; adjust its `CHAT_RATE_*` variables only if you understand the cost/privacy trade-off.
 8. When the service is live, copy its public `https://...onrender.com` URL. Open `<service-url>/health`; it must return HTTP 200 with `"status": "ok"`, `"mcp_connected": true`, `"rag_status_source": "mcp_child"`, and matching `"rag_backend"` / `"configured_rag_backend"` values. `rag_backend` is reported by the MCP child, not inferred from the web process. An HTTP 503 means the child is unavailable or its backend disagrees with the parent and must be fixed before recording the demo.
 9. Open the root URL and submit the PTO demo request: “Can I take three days of PTO next week?” with employee ID `E1001`. Confirm the response reports `planner: "llm"` before treating it as a live-LLM demo.
@@ -62,7 +63,7 @@ If Render does not detect the Blueprint, create **New** → **Web Service** and 
    | Setting | Value |
    | --- | --- |
    | Builder | Railpack |
-   | Build command | `pip install -r requirements.txt && python scripts/build_rag_index.py && RAG_BACKEND=lexical python -m pytest -q` |
+   | Build command | `pip install -r requirements-dev.txt && python scripts/build_rag_index.py && RAG_BACKEND=lexical python -m pytest -q` |
    | Start command | `uvicorn app.main:app --host 0.0.0.0 --port $PORT` |
    | Health check path | `/health` |
    | Health check timeout | 60 seconds |
@@ -101,7 +102,7 @@ If Render does not detect the Blueprint, create **New** → **Web Service** and 
 
 ## If the deployment fails
 
-- **Build failure:** confirm the log shows `pip install -r requirements.txt` followed by passing tests. Do not deploy around a failing test.
+- **Build failure:** confirm the log shows the selected requirements file and a successful RAG-index build. Render deploys are admitted only after GitHub CI passes; Railway also runs tests during its host build. Do not deploy around a failing test.
 - **Health-check failure:** confirm the start command exactly matches this guide and that the check path is `/health`, not `/`. A 503 means the FastAPI process is up but cannot initialize or reach the local MCP child; use the host log to fix that before retrying.
 - **Service is up but chat fails:** open `/health` first. If `mcp_connected` is false, inspect the platform logs and redeploy after fixing the logged error.
 - **Dense model build/start failure:** set `RAG_BACKEND=lexical` and redeploy to restore the dependency-light index. If the dense build cannot download the public model, check the host's outbound-network log; do not try to commit the model cache or an access token.
