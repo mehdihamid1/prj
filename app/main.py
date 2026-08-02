@@ -18,6 +18,15 @@ from . import mcp_client, settings
 from .agent import respond
 from .mcp_client import discover_tools
 
+# Without this the root logger has no handler, so Python's fallback emits
+# WARNING and above only and every INFO line is dropped -- including the
+# startup line below. Uvicorn configures its own loggers but not the root one,
+# and basicConfig is a no-op if a host has already installed a handler.
+logging.basicConfig(
+    level=os.getenv("LOG_LEVEL", "INFO").upper(),
+    format="%(levelname)s:     %(name)s - %(message)s",
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -97,6 +106,15 @@ def _reset_chat_rate_limit() -> None:
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    # Stamp the build into the host's log stream. The access log records only
+    # request lines, so without this the log cannot answer "which commit is
+    # this instance running?" -- /health carries the same value for callers.
+    logger.info(
+        "starting ClearHR: commit=%s rag_backend=%s planner_model=%s",
+        settings.deployed_commit(),
+        settings.rag_backend(),
+        settings.OPENAI_MODEL,
+    )
     # The persistent MCP child owns RAG readiness.  In dense mode it is the
     # only process allowed to load the ONNX embedding model, avoiding a second
     # model copy in this web process on a 512 MB free-tier container.

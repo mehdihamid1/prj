@@ -193,6 +193,27 @@ def test_health_reports_the_host_injected_commit(monkeypatch):
     assert asyncio.run(main.health())["commit"] == "75c0fcf"
 
 
+def test_startup_logs_the_commit_and_backend(monkeypatch, caplog):
+    """The host log must identify the running build, not just the access lines."""
+    import logging
+
+    async def noop():
+        return None
+
+    monkeypatch.setattr(main.mcp_client, "startup", noop)
+    monkeypatch.setattr(main.mcp_client, "shutdown", noop)
+    monkeypatch.setenv("RENDER_GIT_COMMIT", "8df81bbdeadbeef")
+
+    async def boot():
+        async with main.lifespan(main.app):
+            pass
+
+    with caplog.at_level(logging.INFO, logger="app.main"):
+        asyncio.run(boot())
+
+    assert "commit=8df81bb" in caplog.text
+
+
 def test_deployed_commit_falls_back_when_no_host_variable_is_set(monkeypatch):
     """Local runs and CI have no host revision; report that instead of guessing."""
     from app import settings
