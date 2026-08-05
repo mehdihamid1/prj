@@ -12,9 +12,9 @@ sequential 29-case public HTTP evaluation, and retained per-case artifacts are
 recorded in `deployed.md`, `evaluation/results.md`, and
 `evaluation/artifacts.json`. Before evaluation, the harness required
 `rag_status_source: mcp_child`, matching child/parent backend `dense`, and a
-loaded dense encoder. The three runs report a 69% median end-to-end pass rate
-(66%–79% observed range), 72% median answer-rubric accuracy (72%–83%), 93%
-citation precision in every run, and 100% HTTP success in every run.
+loaded dense encoder. The three runs report a 76% median end-to-end pass rate
+(66%–76% observed range), 76% median answer-rubric accuracy (69%–79%), 86%
+median citation precision (83%–87%), and 100% HTTP success in every run.
 
 The artifacts show real `planner: "llm"` responses alongside deterministic
 safety-gate responses; they are not a fallback-only test. The report
