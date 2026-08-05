@@ -32,9 +32,9 @@ immediate one-variable rollback if a host cannot sustain dense resources.
 [evaluation/results.md](evaluation/results.md) records three complete,
 sequential 29-case HTTP runs against this URL. Before the first billable case,
 the evaluator required `/health` to prove a dense MCP child. The reported
-median was 69% end-to-end pass rate (66%–79% range), 72% answer-rubric
-accuracy (72%–83%), 93% citation precision in every run, and 100% HTTP
-success. The artifacts retain all three response sets and report the observed
+median was a 76% end-to-end pass rate (66%–76% range), 76% answer-rubric
+accuracy (69%–79%), 86% citation precision (83%–87%), and 100% HTTP success in
+every run. The artifacts retain all three response sets and report the observed
 range rather than selecting the strongest run.
 
 The earlier 66% single-run result was a **historical lexical MCP-child
@@ -79,8 +79,8 @@ Two consequences for presenting this service:
   to `/health` a minute beforehand is enough; the service then stays warm while
   in use.
 - The 29-case evaluation in `evaluation/results.md` reports **warm** latency.
-  Its p50 of ~3.7 s is the steady-state figure and excludes this cold path,
-  which is measured separately here on purpose.
+  Its median p50 of ~2.8 s (2.7–3.5 s across runs) is the steady-state figure
+  and excludes this cold path, which is measured separately here on purpose.
 
 ## Deployment configuration
 
