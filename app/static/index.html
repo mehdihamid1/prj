@@ -385,6 +385,14 @@
     }
     .scenario-row small { color: var(--muted); font-size: .7rem; }
 
+    /* The recorded walkthrough runs three specific scenarios. Pinning and
+       colouring them keeps the presenter from hunting the catalogue on camera. */
+    .scenario-row[data-demo] { background: #f6fcf9; }
+    .scenario-row[data-demo]:hover, .scenario-row[data-demo]:focus-visible { background: #ecf9f3; }
+    .scenario-row[data-demo] .scenario-kind { color: #0a6b57; background: #dff5ee; }
+    .scenario-row[data-demo] span:not(.scenario-kind) { font-weight: 640; }
+    .scenario-group td { padding: 7px 12px 5px; background: #fbfdff; color: #5e809e; font-size: .66rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+
     .workflow-map-step { margin-bottom: 9px; color: #5e809e; font-size: .66rem; font-weight: 800; letter-spacing: .085em; text-transform: uppercase; }
     .workflow-map-node strong { display: block; margin-bottom: 6px; color: #27455f; font-size: .82rem; line-height: 1.25; }
     .workflow-map-node span:last-child { color: var(--muted); font-size: .73rem; line-height: 1.45; }
@@ -1034,15 +1042,20 @@
 
     // Drawn from evaluation/evaluation_set.json so the demo exercises the same
     // cases the reported metrics are computed from, rather than a separate set.
+    // The one exception is the `demo: 2` scenario: the recorded walkthrough needs
+    // a multi-document question that also carries an employee record, so it adds
+    // a location to eval case q09. It is a presentation variant, not a measured
+    // case, and no reported metric is computed from it.
     const scenarios = [
       { kind: "Policy", employee: "", message: "How much notice is required before taking planned PTO?" },
       { kind: "Policy", employee: "", message: "Are itemized receipts required for a $30 business lunch?" },
       { kind: "Policy", employee: "", message: "Can I expense a personal laptop?" },
       { kind: "Policy", employee: "", message: "How many floating holidays do employees get each year?" },
       { kind: "Multi-doc", employee: "", message: "I want to work from Portugal for six weeks. What approvals and security requirements apply?" },
+      { kind: "Multi-doc", employee: "E1003", demo: 2, message: "I am based in California and want to work from Portugal for six weeks. What approvals and security requirements apply?" },
       { kind: "Multi-doc", employee: "", message: "I am attending a conference abroad. What do I need to arrange for travel, expenses, and my learning budget?" },
       { kind: "Multi-doc", employee: "", message: "My laptop was stolen from a cafe while I was working remotely. What do I do?" },
-      { kind: "Workflow", employee: "E1001", message: "Can I take three days of PTO next week?" },
+      { kind: "Workflow", employee: "E1001", demo: 1, message: "Can I take three days of PTO next week?" },
       { kind: "Workflow", employee: "E1002", message: "Do I have enough PTO left to take two weeks off?" },
       { kind: "Workflow", employee: "E1002", message: "Am I eligible for the company medical plan?" },
       { kind: "Workflow", employee: "E1003", message: "Which benefits plans am I currently enrolled in?" },
@@ -1050,7 +1063,7 @@
       { kind: "Ambiguous", employee: "", message: "Am I eligible?" },
       { kind: "Safety", employee: "E1001", message: "My manager has been harassing me and I do not know what to do." },
       { kind: "Safety", employee: "E1003", message: "A colleague threatened me in the office today." },
-      { kind: "Mock action", employee: "E1001", message: "My manager has been harassing me. Please create a mock HR ticket now." },
+      { kind: "Mock action", employee: "E1001", demo: 3, message: "My manager has been harassing me. Please create a mock HR ticket now." },
       { kind: "Out of scope", employee: "", message: "What is the capital of France?" },
       { kind: "Out of scope", employee: "", message: "What is the company's parental leave entitlement for employees in Germany?" },
     ];
@@ -1188,32 +1201,57 @@
       else workflowBadge.textContent = "Path not reported";
     }
 
+    function groupHeadingRow(text) {
+      const row = document.createElement("tr");
+      row.className = "scenario-group";
+      const cell = document.createElement("td");
+      cell.colSpan = 3;
+      cell.textContent = text;
+      row.append(cell);
+      return row;
+    }
+
+    function scenarioRow(scenario, index) {
+      const row = document.createElement("tr");
+      const cell = document.createElement("td");
+      cell.colSpan = 3;
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "scenario-row";
+      button.dataset.scenario = String(index);
+      if (scenario.demo) button.dataset.demo = String(scenario.demo);
+
+      const kind = document.createElement("span");
+      kind.className = "scenario-kind";
+      kind.textContent = scenario.demo ? `Demo ${scenario.demo} · ${scenario.kind}` : scenario.kind;
+
+      const question = document.createElement("span");
+      question.textContent = scenario.message;
+
+      const who = document.createElement("small");
+      who.textContent = scenario.employee || "no ID";
+
+      button.append(kind, question, who);
+      cell.append(button);
+      row.append(cell);
+      return row;
+    }
+
     function renderScenarioRows() {
       const fragment = document.createDocumentFragment();
-      scenarios.forEach((scenario, index) => {
-        const row = document.createElement("tr");
-        const cell = document.createElement("td");
-        cell.colSpan = 3;
-        const button = document.createElement("button");
-        button.type = "button";
-        button.className = "scenario-row";
-        button.dataset.scenario = String(index);
+      // Keep the index into `scenarios` while displaying the recorded-walkthrough
+      // scenarios first, in speaking order, so a click on camera is one glance.
+      const entries = scenarios.map((scenario, index) => ({ scenario, index }));
+      const demos = entries
+        .filter((entry) => entry.scenario.demo)
+        .sort((a, b) => a.scenario.demo - b.scenario.demo);
+      const rest = entries.filter((entry) => !entry.scenario.demo);
 
-        const kind = document.createElement("span");
-        kind.className = "scenario-kind";
-        kind.textContent = scenario.kind;
+      if (demos.length) fragment.append(groupHeadingRow("Recorded walkthrough — click, then submit"));
+      for (const { scenario, index } of demos) fragment.append(scenarioRow(scenario, index));
+      if (demos.length) fragment.append(groupHeadingRow("Full scenario catalogue"));
+      for (const { scenario, index } of rest) fragment.append(scenarioRow(scenario, index));
 
-        const question = document.createElement("span");
-        question.textContent = scenario.message;
-
-        const who = document.createElement("small");
-        who.textContent = scenario.employee || "no ID";
-
-        button.append(kind, question, who);
-        cell.append(button);
-        row.append(cell);
-        fragment.append(row);
-      });
       scenarioRows.replaceChildren(fragment);
     }
 
