@@ -14,7 +14,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field
 
-from . import mcp_client, settings, usage
+from . import mcp_client, planner, settings, usage
 from .agent import respond
 from .mcp_client import discover_tools
 
@@ -241,11 +241,25 @@ async def usage_counters(response: Response) -> dict:
 
 @app.get("/tools")
 async def tools() -> dict:
+    """Serve the live MCP schemas, annotated with what the model may call.
+
+    `capability` and `agent_callable` are read from the planner's authorisation
+    table rather than restated here, so the published answer cannot drift from
+    the rule the planner actually enforces. A discovered tool with no capability
+    -- today the health diagnostic, tomorrow any newly added tool -- reports as
+    not agent-callable until it is deliberately classified.
+    """
     try:
-        return {"tools": await discover_tools()}
+        discovered = await discover_tools()
     except Exception:
         logger.warning("Tool discovery could not reach the MCP service")
         raise HTTPException(503, "The HR tool service is temporarily unavailable.") from None
+
+    annotated = []
+    for tool in discovered:
+        capability = planner.TOOL_CAPABILITIES.get(tool.get("name"))
+        annotated.append({**tool, "capability": capability, "agent_callable": capability is not None})
+    return {"tools": annotated, "agent_callable_count": sum(t["agent_callable"] for t in annotated)}
 
 
 @app.post("/chat")

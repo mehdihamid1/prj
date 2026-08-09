@@ -36,7 +36,7 @@ Open `http://127.0.0.1:8000` and try `E1001` with *"Can I take three days of PTO
 | --- | --- |
 | `POST /chat` | Answer, citations, and tool-call trace |
 | `GET /health` | App status, MCP connectivity, and the child process's effective RAG backend |
-| `GET /tools` | Live MCP tool schemas as discovered by the agent |
+| `GET /tools` | Live MCP tool schemas as discovered by the agent, each marked with whether the planner may call it |
 | `GET /usage` | Per-instance counts of LLM provider calls and MCP tool calls |
 
 **Without an API key the app still runs.** It falls back to a deterministic rule-based planner over the same MCP tools, so every endpoint works and the test suite passes with no credentials. With `OPENAI_API_KEY` set, an LLM chooses the tools instead. The default model is the cost-sensitive `gpt-5.6-luna`; it requires a funded account with access to that model. In that mode, the user prompt and the tool schemas/results needed for the turn are sent to OpenAI; use this only with the repository's synthetic coursework data. Render has already produced a live-LLM HTTP evaluation; re-run it whenever a new planner or guardrail revision is deployed.

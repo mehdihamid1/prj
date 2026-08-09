@@ -334,3 +334,41 @@ def test_usage_tracks_how_many_calls_actually_reported_tokens():
     assert llm["provider_calls"] == 2
     assert llm["calls_with_reported_tokens"] == 1
     assert llm["total_tokens"] == 960
+
+
+def test_tools_marks_which_discovered_tools_the_planner_may_call(monkeypatch):
+    """The published annotation must come from the planner's own authorisation
+    table, so /tools cannot claim a boundary the planner does not enforce."""
+    async def discovered():
+        return [
+            {"name": "search_policy_documents", "description": "Retrieve policy.", "inputSchema": {}},
+            {"name": "create_mock_hr_ticket", "description": "Draft a ticket.", "inputSchema": {}},
+            {"name": "get_retrieval_status", "description": "Child diagnostic.", "inputSchema": {}},
+        ]
+
+    monkeypatch.setattr(main, "discover_tools", discovered)
+
+    body = asyncio.run(main.tools())
+
+    by_name = {tool["name"]: tool for tool in body["tools"]}
+    assert by_name["search_policy_documents"]["agent_callable"] is True
+    assert by_name["search_policy_documents"]["capability"] == "policy_read"
+    assert by_name["create_mock_hr_ticket"]["capability"] == "mock_write"
+    # The health diagnostic is discovered and published, but never offered.
+    assert by_name["get_retrieval_status"]["agent_callable"] is False
+    assert by_name["get_retrieval_status"]["capability"] is None
+    assert body["agent_callable_count"] == 2
+
+
+def test_tools_treats_an_unclassified_new_tool_as_not_callable(monkeypatch):
+    """A tool added to the MCP server must not become model-callable simply by
+    being discovered; it stays unavailable until deliberately classified."""
+    async def discovered():
+        return [{"name": "delete_employee_record", "description": "Future.", "inputSchema": {}}]
+
+    monkeypatch.setattr(main, "discover_tools", discovered)
+
+    body = asyncio.run(main.tools())
+
+    assert body["tools"][0]["agent_callable"] is False
+    assert body["agent_callable_count"] == 0

@@ -422,6 +422,25 @@
     .usage-table code { color: #155a9f; font: 500 .77rem/1.5 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
     .usage-table .usage-diagnostic td:first-child { color: var(--muted); }
 
+    /* Discovered MCP tools. The schemas served at GET /tools, rendered so the
+       boundary is legible without reading JSON. */
+    .tool-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(270px, 1fr)); gap: 12px; }
+    .tool-card { padding: 15px; border: 1px solid #dbe6f0; border-radius: 11px; background: #fbfdff; }
+    .tool-card[data-callable="no"] { border-style: dashed; background: #fafbfc; }
+    .tool-card-name { display: block; margin-bottom: 7px; color: #155a9f; font: 700 .84rem/1.4 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; overflow-wrap: anywhere; }
+    .tool-badge {
+      display: inline-block; margin-bottom: 9px; padding: 2px 8px; border-radius: 999px;
+      font-size: .65rem; font-weight: 800; letter-spacing: .04em; text-transform: uppercase;
+      color: #0a6b57; background: #dff5ee;
+    }
+    .tool-card[data-callable="no"] .tool-badge { color: #8a5400; background: #fff2d9; }
+    .tool-card p { margin: 0 0 10px; color: var(--muted); font-size: .78rem; line-height: 1.5; }
+    .tool-params { display: grid; gap: 5px; padding: 0; margin: 0; list-style: none; }
+    .tool-params li { color: #4b627a; font-size: .74rem; line-height: 1.45; }
+    .tool-params code { color: #27455f; font: 600 .74rem/1.45 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
+    .tool-params .tool-required { color: #8a5400; font-weight: 700; }
+    .tool-params-label { display: block; margin-bottom: 6px; color: #5e809e; font-size: .64rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+
     .workflow-map-step { margin-bottom: 9px; color: #5e809e; font-size: .66rem; font-weight: 800; letter-spacing: .085em; text-transform: uppercase; }
     .workflow-map-node strong { display: block; margin-bottom: 6px; color: #27455f; font-size: .82rem; line-height: 1.25; }
     .workflow-map-node span:last-child { color: var(--muted); font-size: .73rem; line-height: 1.45; }
@@ -833,6 +852,7 @@
         <a href="#ask" aria-current="page"><span class="nav-icon" aria-hidden="true">↗</span>Ask ClearHR</a>
         <a href="#workflow-map"><span class="nav-icon" aria-hidden="true">⇄</span>Workflow map</a>
         <a href="#evidence"><span class="nav-icon" aria-hidden="true">≡</span>Evidence trace</a>
+        <a href="#mcp-tools"><span class="nav-icon" aria-hidden="true">⚙</span>MCP tools</a>
         <a href="#usage"><span class="nav-icon" aria-hidden="true">#</span>Call counters</a>
         <a href="#demo-records"><span class="nav-icon" aria-hidden="true">◇</span>Demo records</a>
       </nav>
@@ -1049,6 +1069,20 @@
         </div>
       </section>
 
+      <section class="workflow-map card" id="mcp-tools" aria-labelledby="mcp-tools-title">
+        <header class="workflow-map-header">
+          <div>
+            <p class="eyebrow">Live schemas</p>
+            <h2 id="mcp-tools-title">Discovered MCP tools</h2>
+            <p>Served by <code>GET /tools</code> — discovered from the running MCP server over stdio, never hard-coded here. The planner is offered only the tools with a classified capability.</p>
+          </div>
+          <span class="workflow-map-badge" id="mcp-tools-badge">Discovering…</span>
+        </header>
+        <div class="workflow-map-body">
+          <div class="tool-grid" id="tool-grid"></div>
+        </div>
+      </section>
+
       <section class="workflow-map card" id="usage" aria-labelledby="usage-title">
         <header class="workflow-map-header">
           <div>
@@ -1100,6 +1134,8 @@
     const usageRows = document.getElementById("usage-rows");
     const usageNote = document.getElementById("usage-note");
     const usageRefresh = document.getElementById("usage-refresh");
+    const toolGrid = document.getElementById("tool-grid");
+    const toolsBadge = document.getElementById("mcp-tools-badge");
 
     // Drawn from evaluation/evaluation_set.json so the demo exercises the same
     // cases the reported metrics are computed from, rather than a separate set.
@@ -1406,6 +1442,71 @@
       return row;
     }
 
+    function toolCard(tool) {
+      const card = document.createElement("div");
+      card.className = "tool-card";
+      card.dataset.callable = tool.agent_callable ? "yes" : "no";
+
+      const name = document.createElement("code");
+      name.className = "tool-card-name";
+      name.textContent = tool.name;
+
+      const badge = document.createElement("span");
+      badge.className = "tool-badge";
+      badge.textContent = tool.agent_callable
+        ? `Agent tool · ${tool.capability}`
+        : "Diagnostic · model cannot call";
+
+      const description = document.createElement("p");
+      description.textContent = tool.description || "No description published.";
+
+      card.append(name, badge, description);
+
+      // Read the published schema rather than a copy: whatever the MCP server
+      // declares is what the model is offered, so the panel must show that.
+      const schema = tool.inputSchema || {};
+      const properties = schema.properties || {};
+      const required = new Set(schema.required || []);
+      const names = Object.keys(properties);
+      if (names.length) {
+        const label = document.createElement("span");
+        label.className = "tool-params-label";
+        label.textContent = "Arguments";
+        const list = document.createElement("ul");
+        list.className = "tool-params";
+        for (const key of names) {
+          const item = document.createElement("li");
+          const code = document.createElement("code");
+          code.textContent = key;
+          item.append(code, document.createTextNode(` — ${properties[key].type || "any"}`));
+          if (required.has(key)) {
+            const flag = document.createElement("span");
+            flag.className = "tool-required";
+            flag.textContent = " · required";
+            item.append(flag);
+          }
+          list.append(item);
+        }
+        card.append(label, list);
+      }
+      return card;
+    }
+
+    async function loadTools() {
+      try {
+        const result = await fetch("/tools", { cache: "no-store" });
+        if (!result.ok) throw new Error(String(result.status));
+        const body = await result.json();
+        const tools = body.tools || [];
+        toolGrid.replaceChildren(...tools.map(toolCard));
+        toolsBadge.textContent =
+          `${tools.length} discovered · ${body.agent_callable_count} offered to the planner`;
+      } catch (_) {
+        toolGrid.replaceChildren();
+        toolsBadge.textContent = "Tool discovery unavailable";
+      }
+    }
+
     // Say what the token total actually covers. If a call returned no usage
     // block, the total is short by that call, and the tile should admit it
     // rather than presenting a partial figure as complete.
@@ -1473,6 +1574,7 @@
 
     renderScenarioRows();
     loadUsage();
+    loadTools();
 
     // Delegated: scenario rows are built at runtime from the catalogue above.
     scenarioRows.addEventListener("click", (event) => {
