@@ -6,7 +6,7 @@ import pytest
 from fastapi import HTTPException, Request, Response
 from fastapi.responses import JSONResponse
 
-from app import main
+from app import main, usage
 
 
 def _request(client: str = "203.0.113.10") -> Request:
@@ -250,3 +250,87 @@ def test_health_returns_safe_503_when_parent_and_child_backend_disagree(monkeypa
         "configured_rag_backend": "dense",
         "commit": "unknown",
     }
+
+
+def test_usage_reports_llm_and_mcp_call_counts():
+    usage.reset()
+    usage.record_chat_request()
+    usage.record_planner("llm")
+    usage.record_llm_call()
+    usage.record_llm_call()
+    usage.record_mcp_call("search_policy_documents")
+    usage.record_mcp_call("search_policy_documents")
+    usage.record_mcp_call("check_pto_balance")
+    usage.record_mcp_discovery()
+
+    body = asyncio.run(main.usage_counters(Response()))
+
+    assert body["chat_requests"] == 1
+    assert body["planners"] == {"llm": 1}
+    # One question can take several completions, so provider calls are counted
+    # per round trip rather than per request.
+    assert body["llm"]["provider_calls"] == 2
+    assert body["mcp"]["tool_calls"] == 3
+    assert body["mcp"]["by_tool"]["search_policy_documents"] == 2
+    assert body["mcp"]["schema_discoveries"] == 1
+
+
+def test_usage_keeps_health_probes_out_of_the_agent_tool_total():
+    """A health probe reaches the MCP child. Counting it as agent tool use would
+    inflate the demo figure with polling from the host's own monitor."""
+    usage.reset()
+    usage.record_mcp_call("search_policy_documents")
+    usage.record_mcp_call("get_retrieval_status", diagnostic=True)
+    usage.record_mcp_call("get_retrieval_status", diagnostic=True)
+
+    body = asyncio.run(main.usage_counters(Response()))
+
+    assert body["mcp"]["tool_calls"] == 1
+    assert "get_retrieval_status" not in body["mcp"]["by_tool"]
+    assert body["mcp"]["diagnostic_tool_calls"] == 2
+    assert body["mcp"]["diagnostic_by_tool"] == {"get_retrieval_status": 2}
+
+
+def test_usage_response_is_not_cached():
+    """Counters change on every request; a cached panel would show stale figures."""
+    response = Response()
+    asyncio.run(main.usage_counters(response))
+    assert response.headers["Cache-Control"] == "no-store"
+
+
+def test_usage_reports_the_window_the_counters_cover():
+    """Per-instance counters are meaningless without the window they cover: a
+    woken free-tier instance starts from zero and must not read as 'never used'."""
+    usage.reset()
+    body = asyncio.run(main.usage_counters(Response()))
+    assert body["counters_are_per_instance"] is True
+    assert body["process_started_at"]
+    assert body["uptime_seconds"] >= 0
+
+
+def test_usage_reports_provider_token_totals():
+    usage.reset()
+    usage.record_llm_call(prompt_tokens=1200, completion_tokens=80)
+    usage.record_llm_call(prompt_tokens=1500, completion_tokens=140)
+
+    llm = asyncio.run(main.usage_counters(Response()))["llm"]
+
+    assert llm["provider_calls"] == 2
+    assert llm["prompt_tokens"] == 2700
+    assert llm["completion_tokens"] == 220
+    assert llm["total_tokens"] == 2920
+    assert llm["calls_with_reported_tokens"] == 2
+
+
+def test_usage_tracks_how_many_calls_actually_reported_tokens():
+    """A provider that omits a usage block would otherwise make the total look
+    complete while silently missing that call. The denominator makes it visible."""
+    usage.reset()
+    usage.record_llm_call(prompt_tokens=900, completion_tokens=60)
+    usage.record_llm_call()  # provider returned no usage block
+
+    llm = asyncio.run(main.usage_counters(Response()))["llm"]
+
+    assert llm["provider_calls"] == 2
+    assert llm["calls_with_reported_tokens"] == 1
+    assert llm["total_tokens"] == 960

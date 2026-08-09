@@ -14,7 +14,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field
 
-from . import mcp_client, settings
+from . import mcp_client, settings, usage
 from .agent import respond
 from .mcp_client import discover_tools
 
@@ -227,6 +227,18 @@ async def health():
         )
 
 
+@app.get("/usage")
+async def usage_counters(response: Response) -> dict:
+    """Report what this instance dispatched: LLM calls and MCP tool calls.
+
+    Counters are per-process and in-memory, so a free-tier instance that slept
+    reports from zero. The payload carries the process start time and says so
+    explicitly rather than presenting the numbers as lifetime totals.
+    """
+    response.headers["Cache-Control"] = "no-store"
+    return usage.snapshot()
+
+
 @app.get("/tools")
 async def tools() -> dict:
     try:
@@ -249,8 +261,11 @@ async def chat(payload: ChatRequest, request: Request, response: Response) -> di
     # The response can include synthetic employee details and an operational
     # trace, neither of which should be retained by a browser or intermediary.
     response.headers["Cache-Control"] = "no-store"
+    usage.record_chat_request()
     try:
-        return await respond(payload.message, payload.employee_id, payload.confirm_mock_action)
+        result = await respond(payload.message, payload.employee_id, payload.confirm_mock_action)
+        usage.record_planner(str(result.get("planner") or "unreported"))
+        return result
     except Exception:
         logger.warning("Chat request could not be completed")
         raise HTTPException(

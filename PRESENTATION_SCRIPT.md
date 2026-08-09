@@ -35,6 +35,9 @@ Run through [DEMO_RUNBOOK.md](DEMO_RUNBOOK.md) "Before recording" first, then:
 5. Open in separate tabs: the deployed app, `/health`, the architecture diagram
    in `design-and-evaluation.md`, the GitHub Actions run, `evaluation/results.md`,
    `deployed.md`, `ai-tooling.md`.
+   **Open the diagram on GitHub, not in the VS Code preview** — VS Code does not
+   render mermaid without an extension, so the preview shows raw `flowchart`
+   source. The `<details>` text-only diagram under it works anywhere.
 6. Each speaker: camera on, voice on, **government ID shown when you first
    speak**. Say your own name before your segment.
 7. Nobody screen-shares a `.env`, a host environment-variable value, a billing
@@ -88,7 +91,8 @@ as you say it.
 
 ### 1:25–2:55 — Agentic task 1: PTO request
 
-Switch to the live app. Set employee ID `E1001`. Type and submit:
+Switch to the live app. Click the green **Demo 1** row in Quick-start scenarios —
+it fills the question and sets `E1001`, so nothing is typed on camera — then submit:
 
 > Can I take three days of PTO next week?
 
@@ -126,7 +130,8 @@ Hand off: "⟨name⟩ will take the second task, which is a harder multi-policy 
 
 ### 0:10–2:00 — Agentic task 2: international remote work
 
-Set employee ID `E1003`. Type and submit:
+Click the green **Demo 2** row in Quick-start scenarios — it fills the question
+and sets `E1003` — then submit:
 
 > I am based in California and want to work from Portugal for six weeks. What
 > approvals and security requirements apply?

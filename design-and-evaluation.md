@@ -8,30 +8,37 @@ flowchart TB
 
     subgraph service["One deployed service — Render / Railway free tier"]
         direction TB
-        web["Web layer — FastAPI<br/>/ · /chat · /health · /tools"]
-        agent["Agent orchestrator<br/>intent checks · guardrails · response trace"]
-        client["MCP client adapter<br/>discover_tools() · call(name, arguments)"]
+        web["Web layer — FastAPI<br/><code>app/main.py</code><br/>/ · /chat · /health · /tools · /usage"]
+        agent["Agent orchestrator<br/><code>app/agent.py</code><br/>safety gate · intent checks · response trace"]
+        plan["LLM planner<br/><code>app/planner.py</code><br/>bounded tool-use loop"]
+        client["MCP client adapter<br/><code>app/mcp_client.py</code><br/>discover_tools() · call(name, arguments)"]
 
-        subgraph mcp["MCP server — FastMCP"]
+        subgraph mcp["MCP server — FastMCP · app/mcp_server.py"]
             policyTool["search_policy_documents<br/>get_policy_section"]
             dataTool["lookup_employee_profile<br/>check_pto_balance<br/>lookup_benefits_status<br/>create_mock_hr_ticket"]
         end
 
-        rag["RAG index<br/>heading-aware policy chunks<br/>citation metadata"]
-        records["Synthetic mock data<br/>employees · PTO · benefits"]
+        rag["RAG index<br/><code>app/rag.py</code><br/>heading-aware policy chunks<br/>citation metadata"]
+        records["Synthetic mock data<br/><code>app/data.py</code><br/>employees · PTO · benefits"]
         corpus[("Policy documents<br/>data/policies/*.md")]
     end
 
+    llm["OpenAI API<br/>model from OPENAI_MODEL<br/>key from host env var"]
+
     user -->|"POST /chat"| web
     web --> agent
-    agent -->|"tool name + arguments"| client
+    agent -->|"safety gate passed"| plan
+    plan <-->|"HTTPS · authorised tool schemas out,<br/>tool choice back"| llm
+    plan -->|"tool name + arguments"| client
+    agent -. "no key or provider error:<br/>deterministic planner, same boundary" .-> client
     client -->|"MCP tool call"| mcp
     policyTool --> rag
     dataTool --> records
     corpus -. "indexed during build; validated in MCP child" .-> rag
     mcp -->|"structured tool results"| client
-    client --> agent
-    agent -->|"answer + citations + operational trace"| web
+    client --> plan
+    plan -->|"answer + citations"| agent
+    agent -->|"+ operational trace"| web
     web --> user
 ```
 
@@ -42,19 +49,25 @@ flowchart TB
 USER (browser)
   │ POST /chat: message, optional employee ID, optional confirmation
   ▼
-FASTAPI WEB APP — /, /chat, /health, /tools
+FASTAPI WEB APP — app/main.py — /, /chat, /health, /tools, /usage
   ▼
-AGENT ORCHESTRATOR — intent checks, safety checks, trace assembly
+AGENT ORCHESTRATOR — app/agent.py — safety gate, intent checks, trace assembly
+  │ safety gate passed
+  ▼
+LLM PLANNER — app/planner.py — bounded tool-use loop
+  │ ◄──► OPENAI API — model from OPENAI_MODEL, key from host env var
+  │      authorised tool schemas out, tool choice back
   │ tool name + typed arguments
+  ▼      (no key or provider error: agent.py's deterministic planner
+MCP CLIENT ADAPTER      reaches the same client, so the boundary is unchanged)
+  app/mcp_client.py — discovers and invokes registered MCP tools
   ▼
-MCP CLIENT ADAPTER — discovers and invokes registered MCP tools
-  ▼
-FASTMCP SERVER
-  ├─ Policy tools ─────► RAG index ◄──── policy Markdown documents
-  └─ Employee tools ───► synthetic JSON employee/PTO/benefits records
+FASTMCP SERVER — app/mcp_server.py
+  ├─ Policy tools ─────► RAG index (app/rag.py) ◄──── data/policies/*.md
+  └─ Employee tools ───► synthetic records (app/data.py)
   │ structured results
   ▼
-AGENT → final answer + citations + operational tool trace → USER
+PLANNER → AGENT → final answer + citations + operational tool trace → USER
 ```
 </details>
 

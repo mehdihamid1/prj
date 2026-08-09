@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 
 import pytest
 
-from app import planner, settings
+from app import planner, settings, usage
 
 
 @dataclass
@@ -50,8 +50,15 @@ class _Choice:
 
 
 @dataclass
+class _Usage:
+    prompt_tokens: int
+    completion_tokens: int
+
+
+@dataclass
 class _Response:
     choices: list
+    usage: _Usage | None = None
 
 
 def _text(text: str) -> _Response:
@@ -981,3 +988,41 @@ def test_a_short_section_cannot_clear_the_ratio_on_incidental_words():
 
     cited = {c["document"] for c in planner._select_final_citations(answer, candidates)}
     assert "holidays_and_schedules.txt" not in cited
+
+
+def test_planner_counts_each_completion_and_its_reported_tokens(monkeypatch):
+    """One question can take several completions. The counter must follow the
+    loop, not the request, and must survive a response that omits usage."""
+    usage.reset()
+    monkeypatch.setattr(settings, "OPENAI_MODEL", "gpt-5.6-luna")
+    _install(monkeypatch, [
+        _Response(
+            choices=[_Choice(
+                message=_Message(tool_calls=[_tool_call("search_policy_documents", {"query": "PTO"})]),
+                finish_reason="tool_calls",
+            )],
+            usage=_Usage(prompt_tokens=1100, completion_tokens=40),
+        ),
+        # A provider that reports no usage block must not raise here.
+        _text("You need five calendar days' notice. Source: PTO Policy, Request and Approval."),
+    ])
+
+    async def _policy_call(_name, _arguments):
+        return [{
+            "id": "pto_policy-3", "document": "pto_policy.md", "title": "PTO Policy",
+            "section": "Request and Approval",
+            "text": "Submit planned PTO at least five calendar days before the first day away.",
+            "score": 0.9, "support": 1.0,
+        }]
+
+    monkeypatch.setattr(planner, "discover_tools", _fake_discover_tools)
+    monkeypatch.setattr(planner, "call", _policy_call)
+
+    asyncio.run(planner.respond("How much PTO notice?", None, False))
+
+    counters = usage.snapshot()["llm"]
+    assert counters["provider_calls"] == 2
+    assert counters["calls_with_reported_tokens"] == 1
+    assert counters["prompt_tokens"] == 1100
+    assert counters["completion_tokens"] == 40
+    assert counters["total_tokens"] == 1140
