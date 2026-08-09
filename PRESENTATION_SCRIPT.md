@@ -35,6 +35,9 @@ Run through [DEMO_RUNBOOK.md](DEMO_RUNBOOK.md) "Before recording" first, then:
 5. Open in separate tabs: the deployed app, `/health`, the architecture diagram
    in `design-and-evaluation.md`, the GitHub Actions run, `evaluation/results.md`,
    `deployed.md`, `ai-tooling.md`.
+   **Open the diagram on GitHub, not in the VS Code preview** — VS Code does not
+   render mermaid without an extension, so the preview shows raw `flowchart`
+   source. The `<details>` text-only diagram under it works anywhere.
 6. Each speaker: camera on, voice on, **government ID shown when you first
    speak**. Say your own name before your segment.
 7. Nobody screen-shares a `.env`, a host environment-variable value, a billing

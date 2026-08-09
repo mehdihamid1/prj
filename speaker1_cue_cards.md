@@ -16,26 +16,48 @@ column. Never say a line whose screen is not up yet.
 
 | ON SCREEN | SAY |
 | --- | --- |
-| 📌 Camera on. Gov ID held up. Title slide or the app landing page. | <span style="color:#15803d">*(close to verbatim)* "Good morning. I'm Hamid, with me are \_\_\_\_\_ and \_\_\_\_\_, and this is ClearHR — an agentic HR assistant for a fictional company, Northwind Systems. It answers employee HR questions by retrieving from a synthetic policy corpus and reading synthetic employee records, and every answer it gives is cited and traceable."</span> |
+| 📌 Camera on. Gov ID held up. Title slide or the app landing page. | <span style="color:#15803d">*(close to verbatim)* "Good morning. I'm Mehdi, with me are \_\_\_\_\_ and \_\_\_\_\_, and this is ClearHR — an agentic HR assistant for a fictional company, Northwind Systems. It answers employee HR questions by retrieving from a synthetic policy corpus and reading synthetic employee records, and every answer it gives is cited and traceable."</span> |
 | Same. | <span style="color:#15803d">"I'll cover the design and run our first agentic task; \_\_\_\_\_ takes the second task and our safety controls; \_\_\_\_\_ closes with deployment, CI/CD, and our measured evaluation."</span> |
 
 ---
 
 ## 🏗️ 0:25–1:25 — DESIGN WALKTHROUGH
 
-**Screen for this whole beat → architecture diagram in `design-and-evaluation.md`.**
-Point your cursor at the block named in the left column as you speak.
+**Screen for this whole beat → the `## Architecture` diagram, the FIRST mermaid
+block in `design-and-evaluation.md`.** Not the `## Technology stack` one further
+down — that one carries the CI/CD build path, which is Speaker 3's material.
+
+> ⚠️ **Share it from GitHub, not the VS Code preview.** VS Code's built-in
+> markdown preview does not render mermaid without an extension — you'd be
+> showing raw `flowchart TB` source on camera. GitHub renders it natively.
+> (Fallback that works anywhere: the **Text-only diagram** `<details>` block
+> right under it.)
+
+Node names below are the diagram's real labels — point at the exact box.
 
 | ON SCREEN — point here | SAY |
 | --- | --- |
-| **Corpus & RAG block** | <span style="color:#15803d">14 synthetic policy documents, ~15,969 words, in 3 formats — 11 Markdown, 2 HTML, 1 plain text. Heading-aware parsing, so all 142 chunks carry their document and section.</span> |
-| Still the RAG block; trace the arrow into the index | <span style="color:#15803d">Retrieval is dense: FastEmbed `BAAI/bge-small-en-v1.5`, 384 dimensions, cosine, top-k of 4. Citations carry document ID, section, and snippet.</span> |
-| **MCP boundary block** ⚠️ the rubric's hard line — say it explicitly | <span style="color:#15803d">Seven FastMCP tools: two read the RAG index, four read or draft against synthetic records, and one is a health-only retrieval diagnostic the model is never allowed to call.</span> |
-| Trace the parent → subprocess arrow | <span style="color:#15803d">The agent does **not** call Python functions directly. At startup the service launches the FastMCP server as a local stdio subprocess, completes a real MCP handshake, discovers the tool schemas, and sends `call_tool` requests over JSON-RPC.</span> |
+| The cylinder at the bottom: **`Policy documents / data/policies/*.md`** | <span style="color:#15803d">14 synthetic policy documents, ~15,969 words, in 3 formats — 11 Markdown, 2 HTML, 1 plain text. Heading-aware parsing, so all 142 chunks carry their document and section.</span> |
+| Trace the **dotted arrow** up into **`RAG index`** — its label reads *"indexed during build; validated in MCP child"* | <span style="color:#15803d">That indexing happens at build time, not per request. Retrieval is dense: FastEmbed `BAAI/bge-small-en-v1.5`, 384 dimensions, cosine, top-k of 4. Citations carry document ID, section, and snippet.</span> |
+| The **`MCP server — FastMCP`** box ⚠️ the rubric's hard line — say it explicitly | <span style="color:#15803d">Seven FastMCP tools: two read the RAG index, four read or draft against synthetic records, and one is a health-only retrieval diagnostic the model is never allowed to call.</span> |
+| ⚠️ The diagram shows only **six** — the seventh, `get_retrieval_status`, isn't drawn. If you say "seven", add the half-sentence on the right | <span style="color:#15803d">"…the seventh isn't on the diagram because it's a diagnostic, not an agent capability — Speaker 3 shows it at `/health`."</span> |
+| The **`MCP client adapter`** box, then trace its arrow into the MCP subgraph — the one labelled **`MCP tool call`** | <span style="color:#15803d">The agent does **not** call Python functions directly. At startup the service launches the FastMCP server as a local stdio subprocess, completes a real MCP handshake, discovers the tool schemas, and sends `call_tool` requests over JSON-RPC.</span> |
 | *(optional)* flip to `GET /tools` if you have the tab ready | <span style="color:#15803d">Schemas are served live at `GET /tools`.</span> |
-| **Orchestration block**, left to right through the gates | <span style="color:#15803d">Every request passes a deterministic safety gate first, then clarification and scope gates, then the LLM planner — a bounded tool-use loop on `gpt-5.6-luna` — with a deterministic rule-based planner as fallback if there's no key or the provider fails.</span> |
-| Point at planner and MCP boundary in turn | <span style="color:#15803d">The LLM chooses *which* tool; MCP is *how* the call travels. Those are separate concerns by design.</span> |
-| Whole diagram, then start switching tabs | <span style="color:#15803d">"It's one free-tier service, so the MCP server runs as a local subprocess rather than a second hosted service — the protocol boundary is real either way."</span> |
+| The **`Agent orchestrator`** box — its subtitle reads *intent checks · guardrails · response trace* | <span style="color:#15803d">Every request passes a deterministic safety gate first, then clarification and scope gates, then the LLM planner — a bounded tool-use loop on `gpt-5.6-luna` — with a deterministic rule-based planner as fallback if there's no key or the provider fails.</span> |
+| Point at **`Agent orchestrator`**, then at the **`MCP tool call`** arrow, in turn | <span style="color:#15803d">The LLM chooses *which* tool; MCP is *how* the call travels. Those are separate concerns by design.</span> |
+| The outer box: **`One deployed service — Render / Railway free tier`**, then start switching tabs | <span style="color:#15803d">"It's one free-tier service, so the MCP server runs as a local subprocess rather than a second hosted service — the protocol boundary is real either way."</span> |
+
+### 🔁 Fallback — only if a grader asks "what did you build it with?"
+
+Scroll to the **`## Technology stack`** diagram and follow one question down the
+page. Don't describe boxes; follow the arrows.
+
+| ON SCREEN — trace this | SAY |
+| --- | --- |
+| Top to bottom: `uvicorn + FastAPI` → `Agent orchestrator` → `MCP client` | <span style="color:#15803d">"One question, top to bottom. FastAPI is the web layer, it hands to the orchestrator where the safety gate and LLM planner live, and the planner calls the MCP client."</span> |
+| The arrow labelled **`MCP stdio / JSON-RPC · local subprocess`** — this is the whole reason to show this diagram | <span style="color:#15803d">"And look at this arrow — MCP stdio, JSON-RPC, local subprocess. That's the boundary."</span> |
+| The fork below `MCP server`: `RAG` on the left, `Records` on the right | <span style="color:#15803d">"On the other side, the FastMCP server is the only thing that touches anything real — RAG for policy evidence, records for employee data. Then it comes back up the same path as an answer with citations."</span> |
+| ⚠️ Ignore the **Build path** boxes on the right | <span style="color:#15803d">"The build and CI path is on the right — \_\_\_\_\_ covers that."</span> |
 
 ---
 
