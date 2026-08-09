@@ -492,7 +492,13 @@ async def respond(
         response = await client.chat.completions.create(**completion_request)
         # Counted per completion, not per user question: one question can take
         # several rounds through this loop as the model requests more evidence.
-        usage.record_llm_call()
+        # Token fields are read defensively: `usage` is absent on some providers
+        # and streaming shapes, and a missing count must not raise here.
+        reported = getattr(response, "usage", None)
+        usage.record_llm_call(
+            prompt_tokens=getattr(reported, "prompt_tokens", 0) or 0,
+            completion_tokens=getattr(reported, "completion_tokens", 0) or 0,
+        )
 
         choice = response.choices[0]
         reply = choice.message

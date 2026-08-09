@@ -306,3 +306,31 @@ def test_usage_reports_the_window_the_counters_cover():
     assert body["counters_are_per_instance"] is True
     assert body["process_started_at"]
     assert body["uptime_seconds"] >= 0
+
+
+def test_usage_reports_provider_token_totals():
+    usage.reset()
+    usage.record_llm_call(prompt_tokens=1200, completion_tokens=80)
+    usage.record_llm_call(prompt_tokens=1500, completion_tokens=140)
+
+    llm = asyncio.run(main.usage_counters(Response()))["llm"]
+
+    assert llm["provider_calls"] == 2
+    assert llm["prompt_tokens"] == 2700
+    assert llm["completion_tokens"] == 220
+    assert llm["total_tokens"] == 2920
+    assert llm["calls_with_reported_tokens"] == 2
+
+
+def test_usage_tracks_how_many_calls_actually_reported_tokens():
+    """A provider that omits a usage block would otherwise make the total look
+    complete while silently missing that call. The denominator makes it visible."""
+    usage.reset()
+    usage.record_llm_call(prompt_tokens=900, completion_tokens=60)
+    usage.record_llm_call()  # provider returned no usage block
+
+    llm = asyncio.run(main.usage_counters(Response()))["llm"]
+
+    assert llm["provider_calls"] == 2
+    assert llm["calls_with_reported_tokens"] == 1
+    assert llm["total_tokens"] == 960

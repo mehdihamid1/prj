@@ -32,6 +32,9 @@ _process_started_monotonic = time.monotonic()
 
 _chat_requests = 0
 _llm_calls = 0
+_llm_calls_with_tokens = 0
+_llm_prompt_tokens = 0
+_llm_completion_tokens = 0
 _llm_failures = 0
 _mcp_discoveries = 0
 _mcp_agent_calls: dict[str, int] = {}
@@ -52,15 +55,25 @@ def record_planner(name: str) -> None:
         _planners[name] = _planners.get(name, 0) + 1
 
 
-def record_llm_call() -> None:
-    """Count one chat-completion request sent to the provider.
+def record_llm_call(prompt_tokens: int = 0, completion_tokens: int = 0) -> None:
+    """Count one chat-completion request sent to the provider, with its tokens.
 
     The planner loop can send several per user question -- one per tool-use
     round trip -- so this is deliberately not the same as `chat_requests`.
+
+    Token counts are the provider's own reported figures, taken as plain ints so
+    this module stays independent of any SDK response type. A provider that
+    omits usage contributes nothing, which would silently under-report the
+    total, so calls that did report are counted separately and the panel shows
+    that denominator rather than implying every call was measured.
     """
-    global _llm_calls
+    global _llm_calls, _llm_calls_with_tokens, _llm_prompt_tokens, _llm_completion_tokens
     with _lock:
         _llm_calls += 1
+        if prompt_tokens or completion_tokens:
+            _llm_calls_with_tokens += 1
+            _llm_prompt_tokens += prompt_tokens
+            _llm_completion_tokens += completion_tokens
 
 
 def record_llm_failure() -> None:
@@ -98,6 +111,13 @@ def snapshot() -> dict[str, Any]:
             "llm": {
                 "provider_calls": _llm_calls,
                 "provider_failures": _llm_failures,
+                # Provider-reported figures. `calls_with_reported_tokens` is the
+                # denominator: totals cover only those calls, never an estimate
+                # for the rest.
+                "calls_with_reported_tokens": _llm_calls_with_tokens,
+                "prompt_tokens": _llm_prompt_tokens,
+                "completion_tokens": _llm_completion_tokens,
+                "total_tokens": _llm_prompt_tokens + _llm_completion_tokens,
             },
             "mcp": {
                 "tool_calls": sum(agent_calls.values()),
@@ -112,8 +132,10 @@ def snapshot() -> dict[str, Any]:
 def reset() -> None:
     """Clear every counter. Used by tests; there is no HTTP route that calls it."""
     global _chat_requests, _llm_calls, _llm_failures, _mcp_discoveries
+    global _llm_calls_with_tokens, _llm_prompt_tokens, _llm_completion_tokens
     with _lock:
         _chat_requests = _llm_calls = _llm_failures = _mcp_discoveries = 0
+        _llm_calls_with_tokens = _llm_prompt_tokens = _llm_completion_tokens = 0
         _mcp_agent_calls.clear()
         _mcp_diagnostic_calls.clear()
         _planners.clear()

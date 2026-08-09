@@ -1406,6 +1406,17 @@
       return row;
     }
 
+    // Say what the token total actually covers. If a call returned no usage
+    // block, the total is short by that call, and the tile should admit it
+    // rather than presenting a partial figure as complete.
+    function tokenSubtitle(llm) {
+      const measured = llm.calls_with_reported_tokens || 0;
+      const calls = llm.provider_calls || 0;
+      if (calls === 0) return "No provider call yet";
+      const split = `${Number(llm.prompt_tokens || 0).toLocaleString()} prompt · ${Number(llm.completion_tokens || 0).toLocaleString()} completion`;
+      return measured === calls ? split : `${split} — reported for ${measured} of ${calls} calls`;
+    }
+
     function renderUsage(body) {
       const mcp = body.mcp || {};
       const llm = body.llm || {};
@@ -1416,6 +1427,7 @@
         usageTile("LLM provider calls", llm.provider_calls,
           llm.provider_failures ? `${llm.provider_failures} fell back to the deterministic planner` : "One per tool-use round trip"),
         usageTile("MCP tool calls", mcp.tool_calls, "Agent calls only"),
+        usageTile("LLM tokens", llm.total_tokens, tokenSubtitle(llm)),
         usageTile("Chat requests", body.chat_requests, plannerMix ? `Planner used: ${plannerMix}` : "No request yet"),
         usageTile("Schema discoveries", mcp.schema_discoveries, "list_tools over the MCP session"),
       );
