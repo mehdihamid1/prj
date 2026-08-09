@@ -15,7 +15,7 @@ import json
 import logging
 from typing import Any
 
-from . import planner, settings
+from . import planner, settings, usage
 from .mcp_client import call, request_session
 
 logger = logging.getLogger(__name__)
@@ -617,6 +617,7 @@ async def respond(
                 # A provider outage degrades to the deterministic planner rather than
                 # failing the request; the response says so instead of hiding it.
                 logger.warning("LLM planner failed; using deterministic fallback", exc_info=True)
+                usage.record_llm_failure()
                 fallback = await _deterministic_respond(message, employee_id, confirm_action)
                 fallback["planner"] = "deterministic-fallback"
                 fallback["planner_error"] = "LLM provider unavailable; used the evidence-based fallback."

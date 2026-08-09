@@ -8,7 +8,7 @@ flowchart TB
 
     subgraph service["One deployed service — Render / Railway free tier"]
         direction TB
-        web["Web layer — FastAPI<br/><code>app/main.py</code><br/>/ · /chat · /health · /tools"]
+        web["Web layer — FastAPI<br/><code>app/main.py</code><br/>/ · /chat · /health · /tools · /usage"]
         agent["Agent orchestrator<br/><code>app/agent.py</code><br/>safety gate · intent checks · response trace"]
         plan["LLM planner<br/><code>app/planner.py</code><br/>bounded tool-use loop"]
         client["MCP client adapter<br/><code>app/mcp_client.py</code><br/>discover_tools() · call(name, arguments)"]
@@ -49,7 +49,7 @@ flowchart TB
 USER (browser)
   │ POST /chat: message, optional employee ID, optional confirmation
   ▼
-FASTAPI WEB APP — app/main.py — /, /chat, /health, /tools
+FASTAPI WEB APP — app/main.py — /, /chat, /health, /tools, /usage
   ▼
 AGENT ORCHESTRATOR — app/agent.py — safety gate, intent checks, trace assembly
   │ safety gate passed

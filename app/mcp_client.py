@@ -34,7 +34,7 @@ from typing import Any, AsyncIterator
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import get_default_environment, stdio_client
 
-from . import settings
+from . import settings, usage
 
 logger = logging.getLogger(__name__)
 
@@ -200,15 +200,24 @@ def _payload(result: Any) -> Any:
 async def discover_tools() -> list[dict[str, Any]]:
     """Discover schemas from the running MCP server; schemas are never hard-coded."""
     listed = await _invoke("list_tools")
+    usage.record_mcp_discovery()
     return [
         {"name": tool.name, "description": tool.description, "inputSchema": tool.inputSchema}
         for tool in listed.tools
     ]
 
 
-async def call(name: str, arguments: dict[str, Any]) -> Any:
-    """Call a named MCP tool over stdio and return its structured result."""
-    return _payload(await _invoke("call_tool", name, arguments))
+async def call(name: str, arguments: dict[str, Any], *, diagnostic: bool = False) -> Any:
+    """Call a named MCP tool over stdio and return its structured result.
+
+    `diagnostic` marks a call the agent did not make -- currently only the
+    health probe -- so the usage panel does not report health polling as agent
+    tool use. Counting happens after the call returns, so the figure is
+    completed calls rather than attempts.
+    """
+    result = _payload(await _invoke("call_tool", name, arguments))
+    usage.record_mcp_call(name, diagnostic=diagnostic)
+    return result
 
 
 async def retrieval_status() -> dict[str, Any]:
@@ -219,7 +228,7 @@ async def retrieval_status() -> dict[str, Any]:
     claimed backend. The result contains only operational metadata, never a
     provider credential or policy/employee content.
     """
-    status = await call("get_retrieval_status", {})
+    status = await call("get_retrieval_status", {}, diagnostic=True)
     if not isinstance(status, dict):
         raise RuntimeError("MCP retrieval status was not an object")
     backend = status.get("rag_backend")

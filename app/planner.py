@@ -19,7 +19,7 @@ import json
 import re
 from typing import Any
 
-from . import settings
+from . import settings, usage
 from .mcp_client import call, discover_tools
 
 SYSTEM_PROMPT = """You are ClearHR, an HR assistant for Northwind Systems. You answer employee \
@@ -490,6 +490,9 @@ async def respond(
         }
         completion_request.update(_chat_tool_model_options(settings.OPENAI_MODEL))
         response = await client.chat.completions.create(**completion_request)
+        # Counted per completion, not per user question: one question can take
+        # several rounds through this loop as the model requests more evidence.
+        usage.record_llm_call()
 
         choice = response.choices[0]
         reply = choice.message

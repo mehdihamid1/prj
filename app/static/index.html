@@ -393,6 +393,35 @@
     .scenario-row[data-demo] span:not(.scenario-kind) { font-weight: 640; }
     .scenario-group td { padding: 7px 12px 5px; background: #fbfdff; color: #5e809e; font-size: .66rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
 
+    /* Call counters. These are magnitudes with no series identity, so they are
+       stat tiles rather than a chart, and the values wear ink tokens — a colour
+       here would imply an encoding that does not exist. */
+    .usage-tiles {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 12px; margin-bottom: 18px;
+    }
+    .usage-tile { padding: 14px 15px; border: 1px solid #dbe6f0; border-radius: 11px; background: #fbfdff; }
+    .usage-label { display: block; margin-bottom: 6px; color: var(--muted); font-size: .74rem; line-height: 1.35; }
+    .usage-value { display: block; color: var(--ink); font-size: 1.62rem; font-weight: 720; font-variant-numeric: tabular-nums; letter-spacing: -.02em; line-height: 1.1; }
+    .usage-sub { display: block; margin-top: 5px; color: var(--soft); font-size: .71rem; line-height: 1.4; }
+    .usage-refresh {
+      flex: 0 0 auto; min-height: 34px; padding: 0 13px; border: 1px solid #cfdbe6;
+      border-radius: 8px; color: #2f587e; background: #fff; font-size: .78rem; font-weight: 700;
+      transition: border-color .18s ease, background .18s ease;
+    }
+    .usage-refresh:hover { border-color: #94bee9; background: var(--blue-pale); }
+    .usage-note { margin: 14px 0 0; color: var(--muted); font-size: .76rem; line-height: 1.5; }
+    .usage-table { width: 100%; border-collapse: collapse; font-size: .8rem; }
+    .usage-table th {
+      padding: 9px 12px; border-bottom: 1px solid #dbe6f0; background: #f5f9fd; color: #5e809e;
+      font-size: .66rem; font-weight: 800; letter-spacing: .08em; text-align: left; text-transform: uppercase;
+    }
+    .usage-table td { padding: 9px 12px; border-bottom: 1px solid #eef3f8; }
+    .usage-table tr:last-child td { border-bottom: 0; }
+    .usage-table td:last-child { width: 1%; text-align: right; font-variant-numeric: tabular-nums; font-weight: 700; white-space: nowrap; }
+    .usage-table code { color: #155a9f; font: 500 .77rem/1.5 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
+    .usage-table .usage-diagnostic td:first-child { color: var(--muted); }
+
     .workflow-map-step { margin-bottom: 9px; color: #5e809e; font-size: .66rem; font-weight: 800; letter-spacing: .085em; text-transform: uppercase; }
     .workflow-map-node strong { display: block; margin-bottom: 6px; color: #27455f; font-size: .82rem; line-height: 1.25; }
     .workflow-map-node span:last-child { color: var(--muted); font-size: .73rem; line-height: 1.45; }
@@ -804,6 +833,7 @@
         <a href="#ask" aria-current="page"><span class="nav-icon" aria-hidden="true">↗</span>Ask ClearHR</a>
         <a href="#workflow-map"><span class="nav-icon" aria-hidden="true">⇄</span>Workflow map</a>
         <a href="#evidence"><span class="nav-icon" aria-hidden="true">≡</span>Evidence trace</a>
+        <a href="#usage"><span class="nav-icon" aria-hidden="true">#</span>Call counters</a>
         <a href="#demo-records"><span class="nav-icon" aria-hidden="true">◇</span>Demo records</a>
       </nav>
 
@@ -1018,6 +1048,33 @@
           </aside>
         </div>
       </section>
+
+      <section class="workflow-map card" id="usage" aria-labelledby="usage-title">
+        <header class="workflow-map-header">
+          <div>
+            <p class="eyebrow">Operational counters</p>
+            <h2 id="usage-title">LLM and MCP call counts</h2>
+            <p>How many requests this instance sent to the model provider, and how many calls crossed the MCP boundary. Counted at the dispatch site, so the figures are what actually left the process.</p>
+          </div>
+          <button class="usage-refresh" id="usage-refresh" type="button">Refresh</button>
+        </header>
+
+        <div class="workflow-map-body">
+          <div class="usage-tiles" id="usage-tiles"></div>
+
+          <div class="scenario-table-wrap">
+            <table class="usage-table">
+              <caption class="visually-hidden">MCP tool calls dispatched by this instance, by tool name.</caption>
+              <thead>
+                <tr><th scope="col">MCP tool</th><th scope="col">Calls</th></tr>
+              </thead>
+              <tbody id="usage-rows"></tbody>
+            </table>
+          </div>
+
+          <p class="usage-note" id="usage-note" aria-live="polite"></p>
+        </div>
+      </section>
     </main>
   </div>
 
@@ -1039,6 +1096,10 @@
     const scenarioRows = document.getElementById("scenario-rows");
     const workflowNodes = document.querySelectorAll(".workflow-map-node[data-node]");
     const workflowBadge = document.getElementById("workflow-map-badge");
+    const usageTiles = document.getElementById("usage-tiles");
+    const usageRows = document.getElementById("usage-rows");
+    const usageNote = document.getElementById("usage-note");
+    const usageRefresh = document.getElementById("usage-refresh");
 
     // Drawn from evaluation/evaluation_set.json so the demo exercises the same
     // cases the reported metrics are computed from, rather than a separate set.
@@ -1305,6 +1366,89 @@
         askButton.disabled = false;
         askButton.removeAttribute("aria-busy");
         askButtonLabel.textContent = "Ask ClearHR";
+        // Refresh after the request settles so the panel reflects the call just
+        // made. Deliberately not awaited: a counter fetch must never delay or
+        // fail the answer the user is waiting for.
+        loadUsage();
+      }
+    }
+
+    function usageTile(label, value, sub) {
+      const tile = document.createElement("div");
+      tile.className = "usage-tile";
+      const labelEl = document.createElement("span");
+      labelEl.className = "usage-label";
+      labelEl.textContent = label;
+      const valueEl = document.createElement("span");
+      valueEl.className = "usage-value";
+      valueEl.textContent = Number(value ?? 0).toLocaleString();
+      tile.append(labelEl, valueEl);
+      if (sub) {
+        const subEl = document.createElement("span");
+        subEl.className = "usage-sub";
+        subEl.textContent = sub;
+        tile.append(subEl);
+      }
+      return tile;
+    }
+
+    function usageRow(name, count, diagnostic) {
+      const row = document.createElement("tr");
+      if (diagnostic) row.className = "usage-diagnostic";
+      const nameCell = document.createElement("td");
+      const code = document.createElement("code");
+      code.textContent = name;
+      nameCell.append(code);
+      if (diagnostic) nameCell.append(document.createTextNode(" — health probe, not agent use"));
+      const countCell = document.createElement("td");
+      countCell.textContent = Number(count).toLocaleString();
+      row.append(nameCell, countCell);
+      return row;
+    }
+
+    function renderUsage(body) {
+      const mcp = body.mcp || {};
+      const llm = body.llm || {};
+      const planners = body.planners || {};
+      const plannerMix = Object.entries(planners).map(([name, n]) => `${n} ${name}`).join(" · ");
+
+      usageTiles.replaceChildren(
+        usageTile("LLM provider calls", llm.provider_calls,
+          llm.provider_failures ? `${llm.provider_failures} fell back to the deterministic planner` : "One per tool-use round trip"),
+        usageTile("MCP tool calls", mcp.tool_calls, "Agent calls only"),
+        usageTile("Chat requests", body.chat_requests, plannerMix ? `Planner used: ${plannerMix}` : "No request yet"),
+        usageTile("Schema discoveries", mcp.schema_discoveries, "list_tools over the MCP session"),
+      );
+
+      const rows = Object.entries(mcp.by_tool || {}).map(([name, n]) => usageRow(name, n, false));
+      for (const [name, n] of Object.entries(mcp.diagnostic_by_tool || {})) rows.push(usageRow(name, n, true));
+      if (rows.length === 0) {
+        const empty = document.createElement("tr");
+        const cell = document.createElement("td");
+        cell.colSpan = 2;
+        cell.className = "empty-item";
+        cell.textContent = "No MCP tool has been called yet on this instance.";
+        empty.append(cell);
+        rows.push(empty);
+      }
+      usageRows.replaceChildren(...rows);
+
+      // State the window the counts cover. Without it a reader can mistake a
+      // freshly woken free-tier instance's zeros for the system never running.
+      const minutes = Math.max(1, Math.round((body.uptime_seconds || 0) / 60));
+      usageNote.textContent =
+        `Counted in this web process only, since it started at ${body.process_started_at} ` +
+        `(about ${minutes} minute${minutes === 1 ? "" : "s"} ago). The free instance sleeps when ` +
+        `idle and wakes as a new process, which resets these to zero.`;
+    }
+
+    async function loadUsage() {
+      try {
+        const result = await fetch("/usage", { cache: "no-store" });
+        if (!result.ok) throw new Error(String(result.status));
+        renderUsage(await result.json());
+      } catch (_) {
+        usageNote.textContent = "Call counters are unavailable right now.";
       }
     }
 
@@ -1313,7 +1457,10 @@
       ask();
     });
 
+    usageRefresh.addEventListener("click", loadUsage);
+
     renderScenarioRows();
+    loadUsage();
 
     // Delegated: scenario rows are built at runtime from the catalogue above.
     scenarioRows.addEventListener("click", (event) => {
