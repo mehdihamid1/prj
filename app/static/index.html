@@ -1542,7 +1542,10 @@
         usageTile("MCP tool calls", mcp.tool_calls, "Agent calls only"),
         usageTile("LLM tokens", llm.total_tokens, tokenSubtitle(llm)),
         usageTile("Chat requests", body.chat_requests, plannerMix ? `Planner used: ${plannerMix}` : "No request yet"),
-        usageTile("Schema discoveries", mcp.schema_discoveries, "list_tools over the MCP session"),
+        usageTile("Schema discoveries", mcp.schema_discoveries,
+          mcp.diagnostic_schema_discoveries
+            ? `by the planner · ${Number(mcp.diagnostic_schema_discoveries).toLocaleString()} more from health and this panel`
+            : "list_tools by the planner"),
       );
 
       const rows = Object.entries(mcp.by_tool || {}).map(([name, n]) => usageRow(name, n, false));

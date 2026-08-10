@@ -197,10 +197,15 @@ def _payload(result: Any) -> Any:
         return {"raw": text, "is_error": bool(getattr(result, "isError", False))}
 
 
-async def discover_tools() -> list[dict[str, Any]]:
-    """Discover schemas from the running MCP server; schemas are never hard-coded."""
+async def discover_tools(*, diagnostic: bool = False) -> list[dict[str, Any]]:
+    """Discover schemas from the running MCP server; schemas are never hard-coded.
+
+    `diagnostic` marks a discovery no agent asked for -- the health probe and the
+    dashboard's own schema panel -- so continuous host polling does not read as
+    planner activity.
+    """
     listed = await _invoke("list_tools")
-    usage.record_mcp_discovery()
+    usage.record_mcp_discovery(diagnostic=diagnostic)
     return [
         {"name": tool.name, "description": tool.description, "inputSchema": tool.inputSchema}
         for tool in listed.tools

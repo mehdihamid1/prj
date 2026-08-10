@@ -49,6 +49,7 @@ class _Counters:
     llm_completion_tokens: int = 0
     llm_failures: int = 0
     mcp_discoveries: int = 0
+    mcp_diagnostic_discoveries: int = 0
     mcp_agent_calls: dict[str, int] = field(default_factory=dict)
     mcp_diagnostic_calls: dict[str, int] = field(default_factory=dict)
     planners: dict[str, int] = field(default_factory=dict)
@@ -76,6 +77,9 @@ class _Counters:
             llm_completion_tokens=self.llm_completion_tokens - baseline.llm_completion_tokens,
             llm_failures=self.llm_failures - baseline.llm_failures,
             mcp_discoveries=self.mcp_discoveries - baseline.mcp_discoveries,
+            mcp_diagnostic_discoveries=(
+                self.mcp_diagnostic_discoveries - baseline.mcp_diagnostic_discoveries
+            ),
             mcp_agent_calls=difference(self.mcp_agent_calls, baseline.mcp_agent_calls),
             mcp_diagnostic_calls=difference(self.mcp_diagnostic_calls, baseline.mcp_diagnostic_calls),
             planners=difference(self.planners, baseline.planners),
@@ -125,10 +129,19 @@ def record_llm_failure() -> None:
         _totals.llm_failures += 1
 
 
-def record_mcp_discovery() -> None:
-    """Count one `list_tools` schema discovery over the MCP session."""
+def record_mcp_discovery(*, diagnostic: bool = False) -> None:
+    """Count one `list_tools` schema discovery over the MCP session.
+
+    `/health` discovers schemas on every probe, so a hosted service polls this
+    continuously with no user involved. Those are kept out of the headline for
+    the same reason diagnostic tool calls are: a figure that climbs on its own
+    is not evidence of agent activity.
+    """
     with _lock:
-        _totals.mcp_discoveries += 1
+        if diagnostic:
+            _totals.mcp_diagnostic_discoveries += 1
+        else:
+            _totals.mcp_discoveries += 1
 
 
 def record_mcp_call(name: str, *, diagnostic: bool = False) -> None:
@@ -186,6 +199,7 @@ def snapshot() -> dict[str, Any]:
             "tool_calls": sum(agent_calls.values()),
             "by_tool": agent_calls,
             "schema_discoveries": windowed.mcp_discoveries,
+            "diagnostic_schema_discoveries": windowed.mcp_diagnostic_discoveries,
             "diagnostic_tool_calls": sum(diagnostic_calls.values()),
             "diagnostic_by_tool": diagnostic_calls,
         },
@@ -197,6 +211,8 @@ def snapshot() -> dict[str, Any]:
             "llm_total_tokens": totals.llm_prompt_tokens + totals.llm_completion_tokens,
             "mcp_tool_calls": sum(totals.mcp_agent_calls.values()),
             "mcp_diagnostic_tool_calls": sum(totals.mcp_diagnostic_calls.values()),
+            "mcp_schema_discoveries": totals.mcp_discoveries,
+            "mcp_diagnostic_schema_discoveries": totals.mcp_diagnostic_discoveries,
         },
     }
 

@@ -162,7 +162,7 @@ async def home() -> FileResponse:
 @app.get("/health")
 async def health():
     try:
-        tools = await discover_tools()
+        tools = await discover_tools(diagnostic=True)
         child_status = await mcp_client.retrieval_status()
         configured_backend = settings.rag_backend()
         child_backend = child_status["rag_backend"]
@@ -264,7 +264,7 @@ async def tools() -> dict:
     not agent-callable until it is deliberately classified.
     """
     try:
-        discovered = await discover_tools()
+        discovered = await discover_tools(diagnostic=True)
     except Exception:
         logger.warning("Tool discovery could not reach the MCP service")
         raise HTTPException(503, "The HR tool service is temporarily unavailable.") from None

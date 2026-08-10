@@ -6,7 +6,7 @@ import pytest
 from fastapi import HTTPException, Request, Response
 from fastapi.responses import JSONResponse
 
-from app import main, usage
+from app import main, settings, usage
 
 
 def _request(client: str = "203.0.113.10") -> Request:
@@ -32,7 +32,7 @@ def clear_rate_limit() -> None:
 
 
 def test_health_returns_safe_503_when_mcp_is_unavailable(monkeypatch):
-    async def unavailable():
+    async def unavailable(**_kwargs):
         raise RuntimeError("MCP startup failed: internal-token-value")
 
     monkeypatch.setattr(main, "discover_tools", unavailable)
@@ -144,7 +144,7 @@ def test_health_reports_the_mcp_child_rag_backend(monkeypatch):
     """Health must query the child; a parent setting alone is not evidence."""
     from app import settings
 
-    async def tools():
+    async def tools(**_kwargs):
         return [{"name": "get_retrieval_status"}]
 
     async def child_status():
@@ -179,7 +179,7 @@ def test_health_reports_the_host_injected_commit(monkeypatch):
     """The deployed build must be identifiable from the URL, not just the host UI."""
     from app import settings
 
-    async def tools():
+    async def tools(**_kwargs):
         return [{"name": "get_retrieval_status"}]
 
     async def child_status():
@@ -228,7 +228,7 @@ def test_deployed_commit_falls_back_when_no_host_variable_is_set(monkeypatch):
 
 
 def test_health_returns_safe_503_when_parent_and_child_backend_disagree(monkeypatch):
-    async def tools():
+    async def tools(**_kwargs):
         return [{"name": "get_retrieval_status"}]
 
     async def child_status():
@@ -339,7 +339,7 @@ def test_usage_tracks_how_many_calls_actually_reported_tokens():
 def test_tools_marks_which_discovered_tools_the_planner_may_call(monkeypatch):
     """The published annotation must come from the planner's own authorisation
     table, so /tools cannot claim a boundary the planner does not enforce."""
-    async def discovered():
+    async def discovered(**_kwargs):
         return [
             {"name": "search_policy_documents", "description": "Retrieve policy.", "inputSchema": {}},
             {"name": "create_mock_hr_ticket", "description": "Draft a ticket.", "inputSchema": {}},
@@ -363,7 +363,7 @@ def test_tools_marks_which_discovered_tools_the_planner_may_call(monkeypatch):
 def test_tools_treats_an_unclassified_new_tool_as_not_callable(monkeypatch):
     """A tool added to the MCP server must not become model-callable simply by
     being discovered; it stays unavailable until deliberately classified."""
-    async def discovered():
+    async def discovered(**_kwargs):
         return [{"name": "delete_employee_record", "description": "Future.", "inputSchema": {}}]
 
     monkeypatch.setattr(main, "discover_tools", discovered)
@@ -413,3 +413,28 @@ def test_unmarked_usage_reports_the_whole_process_window():
     assert body["marked_at"] is None
     assert body["measuring_since"] == body["process_started_at"]
     assert body["chat_requests"] == body["process_totals"]["chat_requests"] == 1
+
+
+def test_health_probes_do_not_count_as_planner_schema_discoveries(monkeypatch):
+    """/health discovers schemas on every probe, so a hosted service polls this
+    continuously with nobody using the app. A headline that climbs on its own is
+    not evidence of agent activity."""
+    usage.reset()
+
+    async def discovered(*_args, **_kwargs):
+        return [{"name": "search_policy_documents", "description": "", "inputSchema": {}}]
+
+    async def child_status():
+        return {"rag_backend": settings.rag_backend(), "index_backend": settings.rag_backend()}
+
+    monkeypatch.setattr(main, "discover_tools", discovered)
+    monkeypatch.setattr(main.mcp_client, "retrieval_status", child_status)
+
+    asyncio.run(main.health())
+    asyncio.run(main.health())
+    asyncio.run(main.tools())
+
+    body = asyncio.run(main.usage_counters(Response()))
+
+    assert body["mcp"]["schema_discoveries"] == 0
+    assert body["process_totals"]["mcp_schema_discoveries"] == 0
