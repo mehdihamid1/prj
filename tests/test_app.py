@@ -372,3 +372,44 @@ def test_tools_treats_an_unclassified_new_tool_as_not_callable(monkeypatch):
 
     assert body["tools"][0]["agent_callable"] is False
     assert body["agent_callable_count"] == 0
+
+
+def test_marking_starts_a_fresh_window_without_discarding_totals():
+    """The demo needs each segment attributable to its own numbers, but a public
+    route that zeroed counters would let anyone erase what the instance did."""
+    usage.reset()
+    usage.record_chat_request()
+    usage.record_llm_call(prompt_tokens=500, completion_tokens=40)
+    usage.record_mcp_call("search_policy_documents")
+    usage.record_mcp_call("check_pto_balance")
+
+    asyncio.run(main.usage_mark(Response()))
+
+    # A fresh window reads zero even though the process has done work.
+    after_mark = asyncio.run(main.usage_counters(Response()))
+    assert after_mark["chat_requests"] == 0
+    assert after_mark["mcp"]["tool_calls"] == 0
+    assert after_mark["mcp"]["by_tool"] == {}
+    assert after_mark["llm"]["total_tokens"] == 0
+    assert after_mark["marked_at"] is not None
+    # ...and the record survives the mark.
+    assert after_mark["process_totals"]["chat_requests"] == 1
+    assert after_mark["process_totals"]["mcp_tool_calls"] == 2
+    assert after_mark["process_totals"]["llm_total_tokens"] == 540
+
+    usage.record_mcp_call("search_policy_documents")
+
+    second = asyncio.run(main.usage_counters(Response()))
+    assert second["mcp"]["by_tool"] == {"search_policy_documents": 1}
+    assert second["process_totals"]["mcp_tool_calls"] == 3
+
+
+def test_unmarked_usage_reports_the_whole_process_window():
+    usage.reset()
+    usage.record_chat_request()
+
+    body = asyncio.run(main.usage_counters(Response()))
+
+    assert body["marked_at"] is None
+    assert body["measuring_since"] == body["process_started_at"]
+    assert body["chat_requests"] == body["process_totals"]["chat_requests"] == 1

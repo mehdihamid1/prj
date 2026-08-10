@@ -239,6 +239,20 @@ async def usage_counters(response: Response) -> dict:
     return usage.snapshot()
 
 
+@app.post("/usage/mark")
+async def usage_mark(response: Response) -> dict:
+    """Start a fresh counter window so one demo segment is attributable to it.
+
+    This moves a baseline rather than clearing anything: `process_totals` keeps
+    reporting everything this process has done. That is why the route can be
+    open on a demo service -- it narrows what the panel highlights and cannot be
+    used to erase the record.
+    """
+    response.headers["Cache-Control"] = "no-store"
+    usage.mark()
+    return usage.snapshot()
+
+
 @app.get("/tools")
 async def tools() -> dict:
     """Serve the live MCP schemas, annotated with what the model may call.
